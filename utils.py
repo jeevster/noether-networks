@@ -104,9 +104,36 @@ def load_dataset(opt):
             length=length,
             horiz_flip=horiz_flip,
         )
+
+    elif opt.dataset == '2d_reacdiff':
+        from data.twod_reacdiff import TwoDReacDiff
+        length = opt.train_set_length + opt.test_set_length
+        frame_step = 1
+        if hasattr(opt, 'frame_step'):
+            frame_step = opt.frame_step
+
+        train_data = TwoDReacDiff(
+        data_root=opt.data_root,
+        train=True,
+        image_size=opt.image_width,
+        seq_len=opt.n_eval,
+        percent_train=(opt.train_set_length/length),
+        frame_step=frame_step,
+        length=length,
+        )
+        test_data = TwoDReacDiff(
+        data_root=opt.data_root,
+        train=False,
+        image_size=opt.image_width,
+        seq_len=opt.n_eval,
+        percent_train=(opt.train_set_length/length),
+        frame_step=frame_step,
+        length=length,
+        )
+        
     else:
         raise ValueError(
-            'Only "phys101" is supported. Other datasets are available in the original SVG repo.'
+            'Only "phys101" and "2d_reacdiff" are supported. Other datasets are available in the original SVG repo.'
         )
     return train_data, test_data
 
@@ -122,7 +149,7 @@ def sequence_stack_input(seq, dtype):
 def normalize_data(opt, dtype, sequence):
     if opt.dataset == 'smmnist' or opt.dataset == 'kth' or \
        opt.dataset == 'bair' or opt.dataset == 'omnipush' or \
-       opt.dataset == 'phys101':
+       opt.dataset == 'phys101' or opt.dataset == '2d_reacdiff':
         sequence.transpose_(0, 1)
         sequence.transpose_(3, 4).transpose_(2, 3)
     else:

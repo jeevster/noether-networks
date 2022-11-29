@@ -39,8 +39,8 @@ jupyter-client==6.1.11
 jupyter-core==4.7.0
 Keras-Preprocessing==1.1.2
 kiwisolver==1.3.1
-lpips-pytorch @ git+https://github.com/S-aiueo32/lpips-pytorch.git@d94711e9615d18668bf5a6a9553d4a18493478b5
-lpips-tf @ git+git://github.com/alexlee-gk/lpips-tensorflow.git@87bea09959fe030e6fd4af31bc499dfb7e998f93
+lpips-pytorch @ git+https://github.com/S-aiueo32/lpips-pytorch.git
+#lpips-tf @ git+git://github.com/alexlee-gk/lpips-tensorflow.git
 Markdown==3.3.3
 matplotlib==3.3.3
 mccabe==0.6.1
@@ -100,9 +100,9 @@ tensorflow-gpu==2.4.0
 termcolor==1.1.0
 threadpoolctl==2.1.0
 tifffile==2020.9.3
-torch==1.7.1+cu110
+torch==1.7.1
 torchaudio==0.7.2
-torchvision==0.8.2+cu110
+torchvision==0.8.2
 torchviz==0.0.1
 tornado==6.1
 tqdm==4.56.0

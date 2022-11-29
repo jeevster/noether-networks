@@ -145,13 +145,13 @@ train_loader = DataLoader(train_data,
                           batch_size=opt.batch_size,
                           shuffle=True,
                           drop_last=True,
-                          pin_memory=True)
+                          pin_memory=False)
 test_loader = DataLoader(test_data,
                          num_workers=opt.num_threads,
                          batch_size=opt.batch_size,
                          shuffle=False,
                          drop_last=True,
-                         pin_memory=True)
+                         pin_memory=False)
 
 
 def get_batch_generator(data_loader):

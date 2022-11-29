@@ -61,7 +61,7 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     #     (after opt.n_past time steps, this will be the last GT frame)
     skip = [None]
 
-    for i in range(1, opt.n_eval):
+    for i in range(1, int(opt.n_eval/opt.frame_step)):
         # TODO: different mode for training, where we get frames for more than just conditioning?
         if mode == 'eval':
             gt = None if i >= opt.n_eval else gt_seq[i]
@@ -196,7 +196,6 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             # inner step: make a prediction, compute inner loss, backprop wrt inner loss
             
 #             print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
-            
             gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
                                                                          prior_epses=prior_epses,
                                                                          posterior_epses=posterior_epses,
