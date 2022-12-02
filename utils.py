@@ -19,7 +19,12 @@ import torch
 from torch import nn
 from models.cn import replace_cn_layers, CNLayer
 from models.svg import SVGModel
-from models.embedding import ConservedEmbedding
+
+try:
+    from models.embedding import ConservedEmbedding
+except:
+    pass
+
 
 
 
@@ -42,6 +47,8 @@ def svg_kl_crit(mu1, logvar1, mu2, logvar2, opt):
 
 def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, opt):
     # svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[opt.n_past:], gt_seq[opt.n_past:]))
+
+    #MSE Loss for Task loss
     svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
     svg_loss = torch.stack(svg_mse_losses).sum()
 

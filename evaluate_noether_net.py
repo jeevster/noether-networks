@@ -104,13 +104,13 @@ train_loader = DataLoader(train_data,
                           batch_size=opt.batch_size,
                           shuffle=True,
                           drop_last=True,
-                          pin_memory=True)
+                          pin_memory=False)
 test_loader = DataLoader(test_data,
                          num_workers=opt.num_threads,
                          batch_size=opt.batch_size,
                          shuffle=False,
                          drop_last=True,
-                         pin_memory=True)
+                         pin_memory=False)
 
 
 def get_batch_generator(data_loader):
@@ -270,11 +270,11 @@ for trial_num in range(opt.n_trials):
             all_gen.append([f.detach().cpu() for f in gen_seq])
 
         # LPIPS
-        with torch.no_grad():
+        '''with torch.no_grad():
             lpips_scores = [[lpips(norm_trnfm(b[_idx]), norm_trnfm(g[_idx])).detach().cpu().item() \
                              for b, g in zip(batch[opt.n_past:], gen_seq[opt.n_past:])] \
                             for _idx in range(batch[0].shape[0])]
-            tailor_lpips.append(lpips_scores)
+            tailor_lpips.append(lpips_scores)'''
 
         with torch.no_grad():
             outer_loss = svg_crit(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt)
@@ -286,7 +286,7 @@ for trial_num in range(opt.n_trials):
     all_tailor_ssims.append(copy.deepcopy(tailor_ssims))
     all_tailor_psnrs.append(copy.deepcopy(tailor_psnrs))
     all_tailor_mses.append(copy.deepcopy(tailor_mses))
-    all_tailor_lpips.append(copy.deepcopy(tailor_lpips))
+    #all_tailor_lpips.append(copy.deepcopy(tailor_lpips))
     all_outer_losses.append(val_outer_loss / (opt.num_val_batch))
 
     print(f'Model {trial_num}:')
@@ -302,7 +302,7 @@ for trial_num in range(opt.n_trials):
 all_tailor_ssims = np.array(all_tailor_ssims)
 all_tailor_psnrs = np.array(all_tailor_psnrs)
 all_tailor_mses = np.array(all_tailor_mses)
-all_tailor_lpips = np.array(all_tailor_lpips)[:,:,None,:,:]
+#all_tailor_lpips = np.array(all_tailor_lpips)[:,:,None,:,:]
 all_val_inner_losses = np.array(all_val_inner_losses)
 all_val_svg_losses = np.array(all_val_svg_losses)
 all_outer_losses = np.array(all_outer_losses)
@@ -312,7 +312,7 @@ np.savez(
     all_base_tailor_ssims=all_tailor_ssims,
     all_base_tailor_psnrs=all_tailor_psnrs,
     all_base_tailor_mses=all_tailor_mses,
-    all_base_tailor_lpips=all_tailor_lpips,
+    #all_base_tailor_lpips=all_tailor_lpips,
     all_val_inner_losses=all_val_inner_losses,
     all_val_svg_losses=all_val_svg_losses,
 )

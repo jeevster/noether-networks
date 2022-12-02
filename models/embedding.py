@@ -34,16 +34,16 @@ class ConvConservedEmbedding(nn.Module):
     def __init__(self, image_width=64, nc=3):
         super(ConvConservedEmbedding, self).__init__()
         self.num_channels = nc
+
         self.layer1 = nn.Sequential(
-            nn.Conv2d(nc, 32, kernel_size=5, stride=1, padding=2),
+            nn.Conv2d(nc, 32, kernel_size=5, stride=1, padding=(2,2)),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
         )
+
+        #1D conv
         self.layer2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
+            nn.Conv2d(32, 2, kernel_size=1, stride=1, padding=(0,0)),
+            nn.ReLU())
 
     def forward(self, x):
         out = self.layer1(x)

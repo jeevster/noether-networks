@@ -1,3 +1,8 @@
+# Convex Optimization (EE227B) Final Project
+This repository contains the code needed to reproduce the Noether network results in our literature review. The repository was forked from the original Noether network paper authors, and the vast majority of the code has remained the same. The main change we implemented was the dataloader for the 2D reaction diffusion equation, found in data/twod_reacdiff.py. The visualizations of the learned embeddings can be produced by running plot_embeddings.ipynb. 
+
+
+
 # Noether Networks for video prediction
 
 This directory contains code to train and evaluate a Noether Network for video prediction on the

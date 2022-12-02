@@ -15,7 +15,7 @@ from models.cn import replace_cn_layers, load_cached_cn_modules, cache_cn_module
 from utils import svg_crit
 
 
-def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev'):
+def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt = None):
     # compute embeddings for sequence
     if num_emb_frames == 1:
         embs = [fmodel(frame, mode='emb') for frame in gen_seq]
@@ -25,6 +25,30 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev')
         for i in range(1, len(gen_seq)):
             stacked_gen_seq.append(torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
         embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]  # len(embs) = len(gen_seq) - 1
+        if setting == 'eval':
+            val_inner_lr = opt.inner_lr
+            if opt.val_inner_lr != -1:
+                val_inner_lr = opt.val_inner_lr
+            embs = np.array(embs)
+            experiment_id = opt.model_path.split('/')[-2]
+            baseline_fname = f'eval_metrics/genseq_{experiment_id}'
+            if val_inner_lr > 0 and opt.num_inner_steps > 0:
+                baseline_fname += f'-lr{val_inner_lr}'
+                baseline_fname += f'-steps{opt.num_inner_steps}'
+                if opt.adam_inner_opt:
+                    baseline_fname += '-adam'
+            baseline_fname += '.npy'
+            np.save(baseline_fname, np.array(gen_seq))
+
+           
+            baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
+            if val_inner_lr > 0 and opt.num_inner_steps > 0:
+                baseline_fname += f'-lr{val_inner_lr}'
+                baseline_fname += f'-steps{opt.num_inner_steps}'
+                if opt.adam_inner_opt:
+                    baseline_fname += '-adam'
+            baseline_fname += '.npy'
+            np.save(baseline_fname, embs)
     else:
         raise ValueError
     if mode == 'mse':
@@ -89,6 +113,8 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
 #             print('re-using eps')
 #         else:
 #             print('sampling eps')
+
+        #predict
         x_hat, mu, logvar, mu_p, logvar_p, skip = func_model(
             x_in,
             gt, skip, opt,
@@ -196,25 +222,32 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             # inner step: make a prediction, compute inner loss, backprop wrt inner loss
             
 #             print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
+
+            #autoregressive rollout
             gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
                                                                          prior_epses=prior_epses,
                                                                          posterior_epses=posterior_epses,
                                                                         )
-
+            #compute Noether loss
             tailor_loss = inner_crit(fmodel, gen_seq, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
-                                     compare_to=opt.inner_crit_compare_to)
+                                     compare_to=opt.inner_crit_compare_to, setting=mode, opt = opt)
             
             if inner_step == 0:
 #                 print('writing orig_gen_seq and orig_tailor_loss')
                 orig_gen_seq = [f.detach() for f in gen_seq]
                 orig_tailor_loss = tailor_loss.detach()
             
+
             loss = tailor_loss.mean()
+
+            #don't do this (as of now)
             if opt.learn_inner_lr:
                 # we optionally meta-learn the inner learning rate (log scale)
                 loss *= torch.exp(list(filter(lambda x: x.size() == torch.Size([]),
                                               [param for param in svg_model.parameters()]))[0])
+            
+            #gradient tailoring step on Noether loss
             diffopt.step(loss)
             
             # cache CN params
@@ -222,6 +255,8 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
                 kwargs['cached_cn'][0] = cache_cn_modules(fmodel)
             
             # TODO: test outer opt pass in inner loop
+
+            #don't do this as of now
             if 'svg_crit' in kwargs:
                 outer_loss = kwargs['svg_crit'](gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).mean()
 #                 print(f'outer_loss in inner loop: {outer_loss}')

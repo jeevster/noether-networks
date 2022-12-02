@@ -132,7 +132,7 @@ if opt.stack_frames:
     opt.channels *= 2
     opt.n_past = opt.n_past // 2
     opt.n_future = opt.n_future // 2
-opt.n_eval = opt.n_past+opt.n_future
+opt.n_eval = opt.n_past+opt.n_future #this is the sequence length
 opt.max_step = opt.n_eval
 
 if (opt.num_train_batch == -1) or (len(train_data) // opt.batch_size < opt.num_train_batch):
@@ -190,6 +190,8 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev')
         embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]  # len(embs) = len(gen_seq) - 1
     else:
         raise ValueError
+    
+    #compute conservation loss
     if mode == 'mse':
         # we penalize the pairwise losses
         if compare_to == 'prev':
@@ -235,13 +237,17 @@ for trial_num in range(opt.num_trials):
     if opt.random_weights:
         print('initializing model with random weights')
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
+        #dynamics model
         frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
+
         posterior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.posterior_rnn_layers, opt.batch_size)
         prior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.prior_rnn_layers, opt.batch_size)
         frame_predictor.apply(utils.init_weights)
         frame_predictor.apply(utils.init_forget_bias_to_one)
         posterior.apply(utils.init_weights)
         prior.apply(utils.init_weights)
+
+
         encoder = model.encoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         encoder.apply(utils.init_weights)
@@ -255,8 +261,13 @@ for trial_num in range(opt.num_trials):
                                                nc=opt.num_emb_frames * opt.channels)
             print('initialized ConvConservedEmbedding')
         else:
+            #embedding model
             embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,
                                            nc=opt.num_emb_frames * opt.channels)
+            
+            print('initialized ConservedEmbedding')
+
+        #complete model
         svg_model = SVGModel(encoder, frame_predictor, decoder, prior, posterior, embedding).cuda()
 
     # load the model from ckpt
@@ -320,10 +331,16 @@ for trial_num in range(opt.num_trials):
 
     # Init outer optimizer
     emb_params = [p[1] for p in svg_model.emb.named_parameters() if not ('gamma' in p[0] or 'beta' in p[0])]
+
+    #Dont do this
     if opt.encoder_emb and not opt.optimize_emb_enc_params:
         emb_params = list(svg_model.emb.linear.parameters())
+
+    # Do this
     if opt.outer_opt_model_weights:
         # optimize the non-CN model weights in the outer loop, as well as emb params
+
+        #encoder and decoder
         non_cn_params = [p[1] for p in list(svg_model.encoder.named_parameters()) + \
                      list(svg_model.decoder.named_parameters()) \
                      if not ('gamma' in p[0] or 'beta' in p[0])]
@@ -334,10 +351,12 @@ for trial_num in range(opt.num_trials):
     else:
         outer_params = emb_params
 
+    #Don't do this
     if opt.learn_inner_lr:
         svg_model.inner_lr_scale = torch.nn.Parameter(torch.tensor(0.))
         outer_params.append(svg_model.inner_lr_scale)
 
+    #define outer optimizer
     outer_opt = optim.Adam(outer_params, lr=opt.outer_lr)
 
     baseline_outer_losses = []
@@ -382,6 +401,8 @@ for trial_num in range(opt.num_trials):
                     # we optionally evaluate a baseline (untailored) model for comparison
                     prior_epses=[]
                     posterior_epses=[]
+
+                    #Don't do this
                     if opt.baseline:
                         base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
                                     predict_many_steps(baseline_svg_model, batch, opt, mode='eval',
@@ -398,6 +419,8 @@ for trial_num in range(opt.num_trials):
                     # iteration, which allows for many inner steps during training without running
                     # into memory issues due to storing the whole dynamic computational graph
                     # associated with unrolling the sequence in the inner loop for many steps
+
+                    #perform tailoring (autoregressive prediciton, tailoring, predict again)
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                         svg_model, batch, opt=opt, track_higher_grads=False,  # no need for higher grads in val
                         mode='eval',
@@ -414,6 +437,7 @@ for trial_num in range(opt.num_trials):
                     )
 
                     with torch.no_grad():
+                        #compute outer (task) loss
                         outer_loss = svg_crit(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt).mean()
 
                     val_outer_loss += outer_loss.detach().cpu().numpy().item()
@@ -464,8 +488,9 @@ for trial_num in range(opt.num_trials):
             cached_cn = [None]  # cached cn params
             batch_inner_losses = []
             batch_svg_losses = []
-            for batch_step in range(opt.num_jump_steps + 1):
+            for batch_step in range(opt.num_jump_steps + 1):    
 
+                #rollout, tailoring, rollout
                 gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                     svg_model, batch, opt=opt, track_higher_grads=True,
                     mode=train_mode,
@@ -480,7 +505,10 @@ for trial_num in range(opt.num_trials):
                     load_cached_cn=(batch_step != 0),
                 )
 
+                #compute task loss
                 outer_loss = svg_crit(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt).mean()
+
+                #don't do this
                 if opt.add_inner_to_outer_loss:
                     inner_loss_component = inner_crit(svg_model, gen_seq, mode='mse',
                                                       num_emb_frames=opt.num_emb_frames,
@@ -491,6 +519,7 @@ for trial_num in range(opt.num_trials):
 
                 train_outer_loss += outer_loss.detach().cpu().numpy().item()
 
+                #Compute gradients of task loss
                 outer_loss.backward()
                 if opt.num_inner_steps > 0:
                     # gradient clipping, and tracking the grad norms
@@ -512,6 +541,7 @@ for trial_num in range(opt.num_trials):
             epoch_inner_losses.append(batch_inner_losses)
             epoch_svg_losses.append(batch_svg_losses)
 
+            #Update conservation model and task model
             outer_opt.step()
             svg_model.zero_grad(set_to_none=True)
 
