@@ -29,26 +29,27 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             val_inner_lr = opt.inner_lr
             if opt.val_inner_lr != -1:
                 val_inner_lr = opt.val_inner_lr
-            embs = np.array(embs)
+            _embs = np.array([i.detach().cpu().numpy() for i in embs])
             experiment_id = opt.model_path.split('/')[-2]
             baseline_fname = f'eval_metrics/genseq_{experiment_id}'
             if val_inner_lr > 0 and opt.num_inner_steps > 0:
                 baseline_fname += f'-lr{val_inner_lr}'
                 baseline_fname += f'-steps{opt.num_inner_steps}'
-                if opt.adam_inner_opt:
-                    baseline_fname += '-adam'
             baseline_fname += '.npy'
-            np.save(baseline_fname, np.array(gen_seq))
+            _gen_seq = gen_seq
+            if torch.is_tensor(_gen_seq):
+                _gen_seq = _gen_seq.detach().cpu().numpy()
+            elif isinstance(_gen_seq, list):
+                _gen_seq = [i.detach().cpu().numpy() for i in _gen_seq]
+            np.save(baseline_fname, np.array(_gen_seq))
 
            
             baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
             if val_inner_lr > 0 and opt.num_inner_steps > 0:
                 baseline_fname += f'-lr{val_inner_lr}'
                 baseline_fname += f'-steps{opt.num_inner_steps}'
-                if opt.adam_inner_opt:
-                    baseline_fname += '-adam'
             baseline_fname += '.npy'
-            np.save(baseline_fname, embs)
+            np.save(baseline_fname, _embs)
     else:
         raise ValueError
     if mode == 'mse':
