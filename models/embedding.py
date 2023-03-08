@@ -1,6 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
+from torch.nn import Linear, Conv2d, ReLU
 import torch.nn.functional as F
 import contextlib
 import utils
@@ -29,7 +30,7 @@ class ConservedEmbedding(nn.Module):
         out = self.fc1(out)
         return out
 
-
+'''fully convolutional conserved embedding'''
 class ConvConservedEmbedding(nn.Module):
     def __init__(self, image_width=64, nc=3):
         super(ConvConservedEmbedding, self).__init__()
@@ -51,42 +52,6 @@ class ConvConservedEmbedding(nn.Module):
         out = out.reshape(out.size(0), -1)
         return out
 
-#2d diffusion-reaction module with learnable parameters
-class TwoDDiffusionReactionEmbedding(torch.nn.Module):
-    def __init__(self):
-        #initialize learnable params - should actually make these networks that take in x
-        self.k = torch.nn.Parameter(torch.tensor(0.001))
-        self.d1 = torch.nn.Parameter(torch.tensor(0.001))
-        self.d2 = torch.nn.Parameter(torch.tensor(0.001))
-        
-    
-    def reaction_1(self, u1, u2):
-        return u1 - (u1 * u1 * u1) - self.k - u2
-
-    def reaction_2(self, u1, u2):
-        return u1 - u2
-
-    #2D reaction diffusion
-    def forward(self, x, y):
-
-        du1_xx = dde.grad.hessian(y, x, i=0, j=0, component=0)
-        du1_yy = dde.grad.hessian(y, x, i=1, j=1, component=0)
-        du2_xx = dde.grad.hessian(y, x, i=0, j=0, component=1)
-        du2_yy = dde.grad.hessian(y, x, i=1, j=1, component=1)
-
-        # TODO: check indices of jacobian
-        du1_t = dde.grad.jacobian(y, x, i=0, j=2)
-        du2_t = dde.grad.jacobian(y, x, i=1, j=2)
-
-        u1 = y[..., 0].unsqueeze(1)
-        u2 = y[..., 1].unsqueeze(1)
-
-        eq1 = du1_t - reaction_1(u1, u2) - self.d1 * (du1_xx + du1_yy)
-        eq2 = du2_t - reaction_2(u1, u2) - self.d2 * (du2_xx + du2_yy)
-
-        return eq1 + eq2
-
-
 class EncoderEmbedding(nn.Module):
     # here for legacy purposes; don't use this
     def __init__(self, encoder, emb_dim=8, image_width=128, nc=3,
@@ -107,3 +72,70 @@ class EncoderEmbedding(nn.Module):
         out = self.encoder(out)[0].reshape(self.batch_size, -1)
         out = self.linear(out)
         return out
+
+
+
+#2d diffusion-reaction module with learnable parameters
+class TwoDDiffusionReactionEmbedding(torch.nn.Module):
+    def __init__(self, in_size, in_channels, hidden_channels, n_layers):
+        super(TwoDDiffusionReactionEmbedding, self).__init__()
+
+        #initialize learnable networks
+        self.k_net = ParameterNet(in_size, in_channels, hidden_channels, n_layers)
+        self.d1_net = ParameterNet(in_size, in_channels, hidden_channels, n_layers)
+        self.d2_net = ParameterNet(in_size, in_channels, hidden_channels, n_layers)
+
+                                    
+    def reaction_1(self, y):
+        u1 = y[..., 0].unsqueeze(1)
+        u2 = y[..., 1].unsqueeze(1)
+        return u1 - (u1 * u1 * u1) - self.k_net(y) - u2
+
+    def reaction_2(self, y):
+        u1 = y[..., 0].unsqueeze(1)
+        u2 = y[..., 1].unsqueeze(1)
+        return u1 - u2
+
+    #2D reaction diffusion
+    def forward(self, x, y):
+        
+        #what are x and y? (I think x is the spatial grid and y is the actual data??)
+        #probably should just have x be a fixed thing passed in at the init function
+        du1_xx = dde.grad.hessian(y, x, i=0, j=0, component=0)
+        du1_yy = dde.grad.hessian(y, x, i=1, j=1, component=0)
+        du2_xx = dde.grad.hessian(y, x, i=0, j=0, component=1)
+        du2_yy = dde.grad.hessian(y, x, i=1, j=1, component=1)
+
+        # TODO: check indices of jacobian
+        du1_t = dde.grad.jacobian(y, x, i=0, j=2)
+        du2_t = dde.grad.jacobian(y, x, i=1, j=2)
+
+        eq1 = du1_t - reaction_1(y) - self.d1_net(y) * (du1_xx + du1_yy)
+        eq2 = du2_t - reaction_2(y) - self.d2_net(y) * (du2_xx + du2_yy)
+
+        return eq1 + eq2
+
+
+class ParameterNet(nn.Module):
+    def __init__(self, in_size, in_channels, hidden_channels, n_layers):
+        super(ParameterNet, self).__init__()
+
+        self.encoder = nn.Sequential(FNO(n_modes=(16, 16), hidden_channels=hidden_channels, \
+                                    in_channels=in_channels, out_channels=hidden_channels, n_layers = n_layers),
+                                    Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(0,0)),
+                                    nn.ReLU(),
+                                    nn.MaxPool2d(2),
+                                    Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(0,0)),
+                                    nn.ReLU()
+                                    nn.MaxPool2d(2),
+                                    Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(0,0)),
+                                    nn.ReLU(),
+                                    nn.MaxPool2d(2),
+                    )
+
+        self.mlp = nn.Linear(hidden_channels*(in_size/8)*(in_size/8), 1)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = torch.flatten(x, start_dim = 1)
+        return self.mlp(x)

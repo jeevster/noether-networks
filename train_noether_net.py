@@ -19,7 +19,7 @@ from models.forward import predict_many_steps, tailor_many_steps
 from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
-from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding
+from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
 import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
@@ -95,6 +95,8 @@ parser.add_argument('--add_inner_to_outer_loss', action='store_true', help='opti
 parser.add_argument('--inner_opt_all_model_weights', action='store_true', help='optimize non-CN model weights in inner loop?')
 parser.add_argument('--batch_norm_to_group_norm', action='store_true', help='replace BN layers with GN layers')
 parser.add_argument('--conv_emb', action='store_true', help='use fully-convolutional embedding?')
+parser.add_argument('--pde_emb', action='store_true', help='use PDE embedding?')
+
 parser.add_argument('--warmstart_emb_path', default='', help='path to pretrained embedding weights')
 
 
