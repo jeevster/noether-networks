@@ -18,11 +18,11 @@ import higher
 from models.forward import predict_many_steps, tailor_many_steps
 from models.cn import replace_cn_layers
 from models.svg import SVGModel
-from models.basic_model import BasicModel
+from models.fno_models import FNOEncoder, FNODecoder
 from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding
 import models.lstm as lstm_models
 
-from neuralop.models import FNO
+from neuralop.models import FNO, FNO1d
 
 
 
@@ -56,7 +56,7 @@ parser.add_argument('--num_val_batch', type=int, default=-1, help='if -1, do all
 parser.add_argument('--inner_lr', type=float, default=0.0001, help='learning rate for inner optimizer')
 parser.add_argument('--val_inner_lr', type=float, default=-1, help='val. LR for inner opt (if -1, use orig.)')
 parser.add_argument('--outer_lr', type=float, default=0.0001, help='learning rate for outer optimizer')
-parser.add_argument('--svg_loss_kl_weight', type=float, default=0.0001, help='weighting factor for KL loss')
+parser.add_argument('--svg_loss_kl_weight', type=float, default=0, help='weighting factor for KL loss')
 parser.add_argument('--emb_dim', type=int, default=4, help='dimensionality of convserved embedding')
 parser.add_argument('--last_frame_skip', action='store_true', help='skip connection config')
 parser.add_argument('--num_trials', type=int, default=5, help='how many times to run training procedure')
@@ -240,23 +240,26 @@ for trial_num in range(opt.num_trials):
     if opt.random_weights:
         print('initializing model with random weights')
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
-        #dynamics model - getting metaclass error here, not sure how to fix
-
-        frame_predictor = FNO(n_modes=(16, 16), hidden_channels=opt.rnn_size, in_channels=opt.g_dim+opt.z_dim+opt.a_dim, out_channels=opt.g_dim, n_layers = opt.predictor_rnn_layers)
+        #dynamics model
+        frame_predictor = FNO(n_modes=(16, 16), hidden_channels=opt.rnn_size, in_channels=opt.channels, out_channels=opt.channels, n_layers = opt.predictor_rnn_layers)
         #frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
 
-        posterior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.posterior_rnn_layers, opt.batch_size)
-        prior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.prior_rnn_layers, opt.batch_size)
+        posterior = nn.Identity()
+        prior = nn.Identity()
+        #posterior = lstm_models.gaussian_FNO(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.posterior_rnn_layers, opt.batch_size)
+        #prior = lstm_models.gaussian_FNO(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.prior_rnn_layers, opt.batch_size)
         #frame_predictor.apply(utils.init_weights)
         #frame_predictor.apply(utils.init_forget_bias_to_one)
-        posterior.apply(utils.init_weights)
-        prior.apply(utils.init_weights)
+        #posterior.apply(utils.init_weights)
+        #prior.apply(utils.init_weights)
 
+        encoder = nn.Identity()#FNOEncoder()
+        decoder = nn.Identity()#FNOEncoder()
 
-        encoder = model.encoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
-        decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
-        encoder.apply(utils.init_weights)
-        decoder.apply(utils.init_weights)
+        #encoder = model.encoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
+        #decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
+        #encoder.apply(utils.init_weights)
+        #decoder.apply(utils.init_weights)
         if opt.encoder_emb:
             embedding = EncoderEmbedding(encoder, opt.emb_dim, opt.image_width,
                                          nc=opt.channels, num_emb_frames=opt.num_emb_frames,
@@ -265,6 +268,11 @@ for trial_num in range(opt.num_trials):
             embedding = ConvConservedEmbedding(image_width=opt.image_width,
                                                nc=opt.num_emb_frames * opt.channels)
             print('initialized ConvConservedEmbedding')
+
+        elif opt.pde_emb:
+            embedding = TwoDDiffusionReactionEmbedding()
+            print('initialized Reaction Diffusion Embedding')
+
         else:
             #embedding model
             embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,

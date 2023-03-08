@@ -76,8 +76,8 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     if 'Basic' not in type(func_model).__name__:
         if getattr(func_model.frame_predictor, 'init_hidden', None) is not None: 
             func_model.frame_predictor.hidden = func_model.frame_predictor.init_hidden()
-        func_model.posterior.hidden = func_model.posterior.init_hidden()
-        func_model.prior.hidden = func_model.prior.init_hidden()
+        #func_model.posterior.hidden = func_model.posterior.init_hidden()
+        #func_model.prior.hidden = func_model.prior.init_hidden()
 
 #     print(f'predict_many_steps - prior_epses: {prior_epses}')
     
@@ -128,9 +128,10 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
         
         
         if not (i-1 < len(prior_epses) and i-1 < len(posterior_epses)):
-#             print('appending to lstm_eps')
-            prior_epses.append([prior_eps[0].detach()])
-            posterior_epses.append([posterior_eps[0].detach()])
+#            print('appending to lstm_eps')
+            #prior_epses.append([prior_eps[0].detach()])
+            #posterior_epses.append([posterior_eps[0].detach()])
+            pass
 
 
         if i < opt.n_past:
@@ -174,9 +175,9 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
 
     elif opt.inner_opt_all_model_weights:
         # TODO: try with ALL modules, not just enc and dec
-        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters())
-#                     + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
-#                        list(svg_model.frame_predictor.parameters())
+        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters()) \
+                    + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
+                       list(svg_model.frame_predictor.parameters())
 
     inner_lr = opt.inner_lr
     if 'val_inner_lr' in kwargs:

@@ -489,7 +489,6 @@ def compare_models(state_dict1, state_dict2):
 
 def batch_norm_to_identity(layer):
     """Iterates over a whole model (or layer of a model) and replaces every batch norm 2D with a group norm
-
     Args:
         layer: model or one layer of a model like resnet34.layer1 or Sequential(), ...
     """
@@ -513,7 +512,6 @@ def batch_norm_to_identity(layer):
 
 def batch_norm_to_group_norm(layer):
     """Iterates over a whole model (or layer of a model) and replaces every batch norm 2D with a group norm
-
     Args:
         layer: model or one layer of a model like resnet34.layer1 or Sequential(), ...
     """

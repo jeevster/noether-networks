@@ -6,6 +6,10 @@ from models.vgg_64 import decoder as VGGDecoder
 from models.embedding import ConservedEmbedding
 from models.cn import CNLayer
 
+def FNODecoder(nc):
+    return nn.Sequential(
+        nn.Conv2d(nc, nc, 1)
+    )
 
 def BasicEncoder(nc):
     return nn.Sequential(

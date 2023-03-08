@@ -142,4 +142,4 @@ class decoder(nn.Module):
         return output
 
 
-    # comapre the h1, h2, etc. from encoder skip to decoder rep.
+    # compare the h1, h2, etc. from encoder skip to decoder rep.
