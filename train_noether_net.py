@@ -22,6 +22,9 @@ from models.basic_model import BasicModel
 from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding
 import models.lstm as lstm_models
 
+from neuralop.models import FNO
+
+
 
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
@@ -237,13 +240,15 @@ for trial_num in range(opt.num_trials):
     if opt.random_weights:
         print('initializing model with random weights')
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
-        #dynamics model
-        frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
+        #dynamics model - getting metaclass error here, not sure how to fix
+
+        frame_predictor = FNO(n_modes=(16, 16), hidden_channels=opt.rnn_size, in_channels=opt.g_dim+opt.z_dim+opt.a_dim, out_channels=opt.g_dim, n_layers = opt.predictor_rnn_layers)
+        #frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
 
         posterior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.posterior_rnn_layers, opt.batch_size)
         prior = lstm_models.gaussian_lstm(opt.g_dim+opt.a_dim, opt.z_dim, opt.rnn_size, opt.prior_rnn_layers, opt.batch_size)
-        frame_predictor.apply(utils.init_weights)
-        frame_predictor.apply(utils.init_forget_bias_to_one)
+        #frame_predictor.apply(utils.init_weights)
+        #frame_predictor.apply(utils.init_forget_bias_to_one)
         posterior.apply(utils.init_weights)
         prior.apply(utils.init_weights)
 
