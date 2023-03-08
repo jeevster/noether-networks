@@ -54,6 +54,7 @@ class ConvConservedEmbedding(nn.Module):
 #2d diffusion-reaction module with learnable parameters
 class TwoDDiffusionReactionEmbedding(torch.nn.module):
     def __init__(self):
+        #initialize learnable params - should actually make these networks that take in x
         self.k = torch.nn.Parameter(torch.tensor(0.001))
         self.d1 = torch.nn.Parameter(torch.tensor(0.001))
         self.d2 = torch.nn.Parameter(torch.tensor(0.001))
