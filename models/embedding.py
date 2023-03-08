@@ -51,6 +51,40 @@ class ConvConservedEmbedding(nn.Module):
         out = out.reshape(out.size(0), -1)
         return out
 
+#2d diffusion-reaction module with learnable parameters
+class TwoDDiffusionReactionEmbedding(torch.nn.module):
+    def __init__(self):
+        self.k = torch.nn.Parameter(torch.tensor(0.001))
+        self.d1 = torch.nn.Parameter(torch.tensor(0.001))
+        self.d2 = torch.nn.Parameter(torch.tensor(0.001))
+        
+    
+    def reaction_1(self, u1, u2):
+        return u1 - (u1 * u1 * u1) - self.k - u2
+
+    def reaction_2(self, u1, u2):
+        return u1 - u2
+
+    #2D reaction diffusion
+    def forward(self, x, y):
+
+        du1_xx = dde.grad.hessian(y, x, i=0, j=0, component=0)
+        du1_yy = dde.grad.hessian(y, x, i=1, j=1, component=0)
+        du2_xx = dde.grad.hessian(y, x, i=0, j=0, component=1)
+        du2_yy = dde.grad.hessian(y, x, i=1, j=1, component=1)
+
+        # TODO: check indices of jacobian
+        du1_t = dde.grad.jacobian(y, x, i=0, j=2)
+        du2_t = dde.grad.jacobian(y, x, i=1, j=2)
+
+        u1 = y[..., 0].unsqueeze(1)
+        u2 = y[..., 1].unsqueeze(1)
+
+        eq1 = du1_t - reaction_1(u1, u2) - self.d1 * (du1_xx + du1_yy)
+        eq2 = du2_t - reaction_2(u1, u2) - self.d2 * (du2_xx + du2_yy)
+
+        return eq1 + eq2
+
 
 class EncoderEmbedding(nn.Module):
     # here for legacy purposes; don't use this
