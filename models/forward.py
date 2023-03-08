@@ -74,7 +74,8 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
 def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], posterior_epses=[]):
     mus, logvars, mu_ps, logvar_ps = [], [], [], []
     if 'Basic' not in type(func_model).__name__:
-        func_model.frame_predictor.hidden = func_model.frame_predictor.init_hidden()
+        if getattr(func_model.frame_predictor, 'init_hidden', None) is not None: 
+            func_model.frame_predictor.hidden = func_model.frame_predictor.init_hidden()
         func_model.posterior.hidden = func_model.posterior.init_hidden()
         func_model.prior.hidden = func_model.prior.init_hidden()
 
