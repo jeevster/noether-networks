@@ -126,7 +126,7 @@ class ParameterNet(nn.Module):
                                     nn.ReLU(),
                                     nn.MaxPool2d(2),
                                     Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(0,0)),
-                                    nn.ReLU()
+                                    nn.ReLU(),
                                     nn.MaxPool2d(2),
                                     Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(0,0)),
                                     nn.ReLU(),
