@@ -38,6 +38,19 @@ hostname = socket.gethostname()
 
 svg_mse_crit = nn.MSELoss()
 
+def pad_zeros(tensor, target_size):
+    # Get the current size of the tensor
+    _, height, width = tensor.size()
+
+    # Compute the amount of padding needed along each axis
+    height_pad = (target_size - height) // 2
+    width_pad = (target_size - width) // 2
+
+    # Pad the tensor with zeros along each axis
+    padded = nn.functional.pad(tensor, (width_pad, width_pad, height_pad, height_pad), mode='constant', value=0)
+
+    return padded
+
 def svg_kl_crit(mu1, logvar1, mu2, logvar2, opt):
     # KL( N(mu_1, sigma2_1) || N(mu_2, sigma2_2))
     sigma1 = logvar1.mul(0.5).exp()

@@ -86,10 +86,11 @@ parser.add_argument('--optimize_emb_enc_params', action='store_true', help='opti
 parser.add_argument('--z_dim', type=int, default=10, help='dimensionality of z_t')
 parser.add_argument('--g_dim', type=int, default=128, help='dimensionality of encoder output vector and decoder input vector')
 parser.add_argument('--a_dim', type=int, default=8, help='dimensionality of action, or a_t')
-parser.add_argument('--rnn_size', type=int, default=256, help='dimensionality of hidden layer')
+parser.add_argument('--fno_modes', type=int, default=12, help='Number of FNO modes to keep')
+parser.add_argument('--fno_width', type=int, default=20, help='dimensionality of hidden layer')
 parser.add_argument('--prior_rnn_layers', type=int, default=1, help='number of layers')
 parser.add_argument('--posterior_rnn_layers', type=int, default=1, help='number of layers')
-parser.add_argument('--predictor_rnn_layers', type=int, default=2, help='number of layers')
+parser.add_argument('--fno_layers', type=int, default=4, help='number of layers')
 parser.add_argument('--no_teacher_force', action='store_true', help='whether or not to do teacher forcing')
 parser.add_argument('--add_inner_to_outer_loss', action='store_true', help='optimize inner loss term in outer loop?')
 parser.add_argument('--inner_opt_all_model_weights', action='store_true', help='optimize non-CN model weights in inner loop?')
@@ -243,7 +244,7 @@ for trial_num in range(opt.num_trials):
         print('initializing model with random weights')
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
         #dynamics model
-        frame_predictor = FNO(n_modes=(16, 16), hidden_channels=opt.rnn_size, in_channels=opt.channels, out_channels=opt.channels, n_layers = opt.predictor_rnn_layers)
+        frame_predictor = FNO(n_modes=(opt.fno_modes, opt.fno_modes), hidden_channels=opt.fno_width, in_channels=opt.channels, out_channels=opt.channels, n_layers = opt.fno_layers)
         #frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
 
         posterior = nn.Identity()
@@ -272,7 +273,9 @@ for trial_num in range(opt.num_trials):
             print('initialized ConvConservedEmbedding')
 
         elif opt.pde_emb:
-            embedding = TwoDDiffusionReactionEmbedding()
+            embedding = TwoDDiffusionReactionEmbedding(in_size = opt.image_width, \
+                                                        in_channels = opt.channels, n_frames = opt.num_emb_frames, hidden_channels = opt.fno_width, \
+                                                        n_layers = opt.fno_layers)
             print('initialized Reaction Diffusion Embedding')
 
         else:
