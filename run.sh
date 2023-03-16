@@ -1,5 +1,140 @@
 #!/bin/bash
  
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
-python train_noether_net.py --image_width 128 --g_dim 128 --z_dim 64 --dataset 2d_reacdiff --data_root /home/sanjeevr/noether-networks/diffusion-reaction --num_trials 1 --n_past 1 --n_future 2 --num_threads 0 --ckpt_every 10 --inner_crit_mode mse --enc_dec_type vgg --emb_type conserved --num_epochs_per_val 1 --fno_modes 12 --fno_width 20 --fno_layers 4 --emb_dim 64 --pde_emb --batch_size 4 --num_inner_steps 1 --num_jump_steps 0 --n_epochs 100 --train_set_length 1000 --test_set_length 200 --inner_lr .0001 --val_inner_lr .0001 --outer_lr .0001 --outer_opt_model_weights --random_weights --only_twenty_degree --frame_step 1 --center_crop 1080 --num_emb_frames 2 --horiz_flip --reuse_lstm_eps --log_dir ./results/2d_reacdiff_pdeemb_FNO_PDEbench/past1_fut20_train1000_val200_lr0.0001_bs4_tailor/ --channels 2 --tailor --random_weights --inner_opt_all_model_weights --model_path ./checkpoints/pdes/t_past2/batch_5
-#--batch_norm_to_group_norm
+python train_noether_net.py \
+--image_width 128 \
+--g_dim 128 \
+--z_dim 64 \
+--dataset 2d_reacdiff \
+--data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--num_trials 1 \
+--n_past 1 \
+--n_future 2 \
+--num_threads 0 \
+--ckpt_every 10 \
+--inner_crit_mode mse \
+--enc_dec_type vgg \
+--emb_type conserved \
+--num_epochs_per_val 1 \
+--fno_modes 16 \
+--fno_width 128 \
+--fno_layers 2 \
+--emb_dim 64 \
+--pde_emb \
+--batch_size 10 \
+--num_inner_steps 1 \
+--num_jump_steps 0 \
+--n_epochs 100 \
+--train_set_length 1000 \
+--test_set_length 200 \
+--inner_lr .0001 \
+--val_inner_lr .0001 \
+--outer_lr .0001 \
+--outer_opt_model_weights \
+--random_weights \
+--only_twenty_degree \
+--frame_step 1 \
+--center_crop 1080 \
+--num_emb_frames 2 \
+--horiz_flip \
+--reuse_lstm_eps \
+--log_dir ./results/2d_reacdiff_pdeemb_FNO/past1_fut2_train1000_val200_lr0.0001_bs10_tailor/ \
+--channels 2 \
+--tailor \
+--random_weights \
+--inner_opt_all_model_weights \
+--batch_norm_to_group_norm \
+--model_path ./checkpoints/pdes/t_past2/batch_5d
+
+#########################################
+python train_noether_net.py \
+--image_width 128 \
+--g_dim 128 \
+--z_dim 64 \
+--dataset 2d_reacdiff \
+--data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--num_trials 1 \
+--n_past 1 \
+--n_future 5 \
+--num_threads 0 \
+--ckpt_every 10 \
+--inner_crit_mode mse \
+--enc_dec_type vgg \
+--emb_type conserved \
+--num_epochs_per_val 1 \
+--fno_modes 16 \
+--fno_width 128 \
+--fno_layers 2 \
+--emb_dim 64 \
+--pde_emb \
+--batch_size 10 \
+--num_inner_steps 1 \
+--num_jump_steps 0 \
+--n_epochs 100 \
+--train_set_length 1000 \
+--test_set_length 200 \
+--inner_lr .0001 \
+--val_inner_lr .0001 \
+--outer_lr .0001 \
+--outer_opt_model_weights \
+--random_weights \
+--only_twenty_degree \
+--frame_step 1 \
+--center_crop 1080 \
+--num_emb_frames 2 \
+--horiz_flip \
+--reuse_lstm_eps \
+--log_dir ./results/2d_reacdiff_pdeemb_FNO/past1_fut5_train1000_val200_lr0.0001_bs10_tailor/ \
+--channels 2 \
+--tailor \
+--random_weights \
+--inner_opt_all_model_weights \
+--batch_norm_to_group_norm \
+--model_path ./checkpoints/pdes/t_past2/batch_5d
+
+#########################################################
+
+python train_noether_net.py \
+--image_width 128 \
+--g_dim 128 \
+--z_dim 64 \
+--dataset 2d_reacdiff \
+--data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--num_trials 1 \
+--n_past 1 \
+--n_future 10 \
+--num_threads 0 \
+--ckpt_every 10 \
+--inner_crit_mode mse \
+--enc_dec_type vgg \
+--emb_type conserved \
+--num_epochs_per_val 1 \
+--fno_modes 16 \
+--fno_width 128 \
+--fno_layers 2 \
+--emb_dim 64 \
+--pde_emb \
+--batch_size 6 \
+--num_inner_steps 1 \
+--num_jump_steps 0 \
+--n_epochs 100 \
+--train_set_length 1000 \
+--test_set_length 200 \
+--inner_lr .0001 \
+--val_inner_lr .0001 \
+--outer_lr .0001 \
+--outer_opt_model_weights \
+--random_weights \
+--only_twenty_degree \
+--frame_step 1 \
+--center_crop 1080 \
+--num_emb_frames 2 \
+--horiz_flip \
+--reuse_lstm_eps \
+--log_dir ./results/2d_reacdiff_pdeemb_FNO/past1_fut10_train1000_val200_lr0.0001_bs6_tailor/ \
+--channels 2 \
+--tailor \
+--random_weights \
+--inner_opt_all_model_weights \
+--batch_norm_to_group_norm \
+--model_path ./checkpoints/pdes/t_past2/batch_5d

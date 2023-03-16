@@ -146,7 +146,6 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #compute time derivatives on stack of frames (use 1st order backward difference scheme)
         du_t = (last_u - u_stack[:, -2]) / self.dt
         dv_t = (last_v - v_stack[:, -2]) / self.dt
-
         eq1 = du_t - self.reaction_1(solution_field) - self.d1_net(solution_field).unsqueeze(-1) * (du_xx + du_yy)
         eq2 = dv_t - self.reaction_2(solution_field) - self.d2_net(solution_field).unsqueeze(-1) * (dv_xx + dv_yy)
 

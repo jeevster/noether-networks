@@ -57,7 +57,7 @@ parser.add_argument('--inner_lr', type=float, default=0.0001, help='learning rat
 parser.add_argument('--val_inner_lr', type=float, default=-1, help='val. LR for inner opt (if -1, use orig.)')
 parser.add_argument('--outer_lr', type=float, default=0.0001, help='learning rate for outer optimizer')
 parser.add_argument('--svg_loss_kl_weight', type=float, default=0, help='weighting factor for KL loss')
-parser.add_argument('--emb_dim', type=int, default=4, help='dimensionality of convserved embedding')
+parser.add_argument('--emb_dim', type=int, default=4, help='dimensionality of conserved embedding')
 parser.add_argument('--last_frame_skip', action='store_true', help='skip connection config')
 parser.add_argument('--num_trials', type=int, default=5, help='how many times to run training procedure')
 parser.add_argument('--inner_crit_mode', default='mse', help='"mse" or "cosine"')
