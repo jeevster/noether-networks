@@ -10,8 +10,8 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import functools
-from skimage.metrics import peak_signal_noise_ratio as psnr_metric
-from skimage.metrics import structural_similarity as ssim_metric
+from torchmetrics.functional import structural_similarity_index_measure as ssim_metric
+from torchmetrics.functional import peak_signal_noise_ratio as psnr_metric
 from scipy import signal
 from scipy import ndimage
 from PIL import Image, ImageDraw
@@ -301,16 +301,16 @@ def clear_progressbar():
     print("\033[2A")
 
 def mse_metric(x1, x2):
-    err = np.sum((x1 - x2) ** 2)
+    err = ((x1 - x2) ** 2).sum()
     err /= float(x1.shape[0] * x1.shape[1] * x1.shape[2])
     return err
 
 def eval_seq(gt, pred):
     T = len(gt)
     bs = gt[0].shape[0]
-    ssim = np.zeros((bs, T))
-    psnr = np.zeros((bs, T))
-    mse = np.zeros((bs, T))
+    ssim = torch.zeros((bs, T)).cuda()
+    psnr = torch.zeros((bs, T)).cuda()
+    mse = torch.zeros((bs, T)).cuda()
     for i in range(bs):
         for t in range(T):
             for c in range(gt[t][i].shape[0]):
@@ -320,7 +320,7 @@ def eval_seq(gt, pred):
             psnr[i, t] /= gt[t][i].shape[0]
             mse[i, t] = mse_metric(gt[t][i], pred[t][i])
 
-    return mse, ssim, psnr
+    return mse.cpu().numpy(), ssim.cpu().numpy(), psnr.cpu().numpy()
 
 # ssim function used in Babaeizadeh et al. (2017), Fin et al. (2016), etc.
 def finn_eval_seq(gt, pred):

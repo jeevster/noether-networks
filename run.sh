@@ -1,12 +1,14 @@
 #!/bin/bash
  
+DATADIR=/data/nithinc/PDEs/2D/diffusion-reaction
+
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
 python train_noether_net.py \
 --image_width 128 \
 --g_dim 128 \
 --z_dim 64 \
 --dataset 2d_reacdiff \
---data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--data_root $DATADIR \
 --num_trials 1 \
 --n_past 1 \
 --n_future 2 \
@@ -52,7 +54,7 @@ python train_noether_net.py \
 --g_dim 128 \
 --z_dim 64 \
 --dataset 2d_reacdiff \
---data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--data_root $DATADIR \
 --num_trials 1 \
 --n_past 1 \
 --n_future 5 \
@@ -99,7 +101,7 @@ python train_noether_net.py \
 --g_dim 128 \
 --z_dim 64 \
 --dataset 2d_reacdiff \
---data_root /home/sanjeevr/noether-networks/diffusion-reaction \
+--data_root $DATADIR \
 --num_trials 1 \
 --n_past 1 \
 --n_future 10 \

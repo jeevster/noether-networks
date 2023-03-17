@@ -29,7 +29,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             val_inner_lr = opt.inner_lr
             if opt.val_inner_lr != -1:
                 val_inner_lr = opt.val_inner_lr
-            _embs = np.array([i.detach().cpu().numpy() for i in embs])
+            _embs = torch.asarray([i.detach() for i in embs])
             experiment_id = opt.model_path.split('/')[-2]
             baseline_fname = f'eval_metrics/genseq_{experiment_id}'
             if val_inner_lr > 0 and opt.num_inner_steps > 0:
@@ -40,8 +40,8 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             if torch.is_tensor(_gen_seq):
                 _gen_seq = _gen_seq.detach().cpu().numpy()
             elif isinstance(_gen_seq, list):
-                _gen_seq = [i.detach().cpu().numpy() for i in _gen_seq]
-            np.save(baseline_fname, np.array(_gen_seq))
+                _gen_seq = torch.asarray([i.detach() for i in _gen_seq]).cpu().numpy()
+            np.save(baseline_fname, np.asarray(_gen_seq))
 
            
             baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
@@ -49,7 +49,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
                 baseline_fname += f'-lr{val_inner_lr}'
                 baseline_fname += f'-steps{opt.num_inner_steps}'
             baseline_fname += '.npy'
-            np.save(baseline_fname, _embs)
+            np.save(baseline_fname, _embs.cpu().numpy())
     else:
         raise ValueError
     if mode == 'mse':
@@ -267,18 +267,18 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
 
                 # track metrics
                 # TODO: also compute outer loss at each step for plotting
-                tailor_losses.append(tailor_loss.mean().detach().cpu().numpy().item())
+                tailor_losses.append(tailor_loss.detach().mean().item())
 
                 if 'tailor_ssims' in kwargs:
                     # compute SSIM for gen_seq batch
-                    mse, ssim, psnr = utils.eval_seq([f.detach().cpu().numpy() for f in x[opt.n_past:]],
-                                                    [f.detach().cpu().numpy() for f in gen_seq[opt.n_past:]])
-                    ssims.append(copy.deepcopy(ssim))
-                    psnrs.append(copy.deepcopy(psnr))
-                    mses.append(copy.deepcopy(mse))
+                    mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
+                                                    [f.detach() for f in gen_seq[opt.n_past:]])
+                    ssims.append(ssim)
+                    psnrs.append(psnr)
+                    mses.append(mse)
     
-                svg_loss = svg_crit(gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().numpy().item()
-                svg_losses.append(copy.deepcopy(svg_loss))
+                svg_loss = svg_crit(gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+                svg_losses.append(svg_loss)
 
         # # TODO: remove next two lines
         # _cn_beta = list(filter(lambda p: 'beta' in p[0], fmodel.decoder.named_parameters()))
@@ -300,18 +300,18 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
                                     num_emb_frames=opt.num_emb_frames,
                                     compare_to=opt.inner_crit_compare_to).detach()
-            tailor_losses.append(tailor_loss.mean().detach().cpu().numpy().item())
+            tailor_losses.append(tailor_loss.mean().cpu().item())
 
-        svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().numpy().item()
-        svg_losses.append(copy.deepcopy(svg_loss))
+        svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+        svg_losses.append(svg_loss)
 
         if 'tailor_ssims' in kwargs:
             # compute SSIM for gen_seq batch
-            mse, ssim, psnr = utils.eval_seq([f.detach().cpu().numpy() for f in x[opt.n_past:]],
-                                             [f.detach().cpu().numpy() for f in final_gen_seq[opt.n_past:]])
-            ssims.append(copy.deepcopy(ssim))
-            psnrs.append(copy.deepcopy(psnr))
-            mses.append(copy.deepcopy(mse))
+            mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
+                                             [f.detach() for f in final_gen_seq[opt.n_past:]])
+            ssims.append(ssim)
+            psnrs.append(psnr)
+            mses.append(mse)
         # I think this isn't actually being run but need to double check TODO
         if opt.only_tailor_on_improvement and orig_gen_seq is not None and orig_tailor_loss is not None and opt.tailor:
             
@@ -328,22 +328,22 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             final_gen_seq = [torch.where(mask, fin, orig)
                              for fin, orig in zip(final_gen_seq, orig_gen_seq)]
 
-            svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().numpy().item()
-            svg_losses.append(copy.deepcopy(svg_loss))
+            svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+            svg_losses.append(svg_loss)
             
             tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
                                      compare_to=opt.inner_crit_compare_to).detach()
-            tailor_losses.append(tailor_loss.mean().detach().cpu().numpy().item())
+            tailor_losses.append(tailor_loss.mean().detach().cpu().item())
 
 
             if 'tailor_ssims' in kwargs:
                 # compute SSIM for gen_seq batch
-                mse, ssim, psnr = utils.eval_seq([f.detach().cpu().numpy() for f in x[opt.n_past:]],
-                                                 [f.detach().cpu().numpy() for f in final_gen_seq[opt.n_past:]])
-                ssims.append(copy.deepcopy(ssim))
-                psnrs.append(copy.deepcopy(psnr))
-                mses.append(copy.deepcopy(mse))
+                mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
+                                                 [f.detach() for f in final_gen_seq[opt.n_past:]])
+                ssims.append(ssim)
+                psnrs.append(psnr)
+                mses.append(mse)
 
     # print(f'    avg INNER losses: {sum(tailor_losses) / len(tailor_losses)}')
     # track metrics

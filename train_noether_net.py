@@ -24,7 +24,7 @@ import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
 
-
+from torchsummary import summary
 
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
@@ -338,8 +338,7 @@ for trial_num in range(opt.num_trials):
         else:
             print(f'embedding ckpt path given but no embedding found...')
     svg_model.cuda()
-    print(svg_model)
-
+    summary(svg_model, (opt.channels, opt.image_width, opt.image_width))
 
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())
@@ -397,9 +396,6 @@ for trial_num in range(opt.num_trials):
     grad_norms =  []
     emb_norms = []
 
-    print('Final Model:')
-    print(svg_model)
-
     print(f'starting at epoch {start_epoch}')
     for epoch in range(start_epoch, opt.n_epochs):
 
@@ -415,7 +411,7 @@ for trial_num in range(opt.num_trials):
 
         # validation
         if epoch % opt.num_epochs_per_val == 0:
-            print(f'validation {epoch}')
+            print(f'Validation {epoch} Epoch')
             val_outer_loss = 0.
             baseline_outer_loss = 0.
 
@@ -469,9 +465,9 @@ for trial_num in range(opt.num_trials):
                         #compute outer (task) loss
                         outer_loss = svg_crit(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt).mean()
 
-                    val_outer_loss += outer_loss.detach().cpu().numpy().item()
+                    val_outer_loss += outer_loss.detach().cpu().item()
                     if opt.baseline:
-                        baseline_outer_loss += base_outer_loss.detach().cpu().numpy().item()
+                        baseline_outer_loss += base_outer_loss.detach().cpu().item()
 
                 if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
                     # fix the inner losses to account for jump step
@@ -496,18 +492,20 @@ for trial_num in range(opt.num_trials):
             if opt.baseline:
                 writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
                                   (epoch + 1))
-                print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
+                if opt.verbose:
+                    print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
             writer.add_scalars('Inner Loss/val', {f'{i} steps': v for i, v in enumerate(val_inner_losses[-1])},
                                (epoch + 1))
-            print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
+            if opt.verbose:
+                print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
             writer.add_scalars('SVG Loss/val', {f'{i} steps': v for i, v in enumerate(val_svg_losses[-1])},
                                (epoch + 1))
-            print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
+            if opt.verbose:
+                print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
             writer.flush()
 
-
         # Training
-        print(f'training {epoch}')
+        print(f'Train {epoch} Epoch')
 
         for batch_num in tqdm(range(opt.num_train_batch)):
             batch = next(training_batch_generator)
@@ -547,7 +545,7 @@ for trial_num in range(opt.num_trials):
                     print(f'inner_loss = {inner_loss_component.detach().cpu().numpy().item()}')
                     outer_loss += inner_loss_component
 
-                train_outer_loss += outer_loss.detach().cpu().numpy().item()
+                train_outer_loss += outer_loss.detach().cpu().item()
 
                 #Compute gradients of task loss
                 outer_loss.backward()
@@ -585,10 +583,12 @@ for trial_num in range(opt.num_trials):
                           (epoch + 1))
         writer.add_scalars('Inner Loss/train', {f'{i} steps': v for i, v in enumerate(inner_losses[-1])},
                            (epoch + 1))
-        print(f'\tInner TRAIN loss: {inner_losses[-1]}')
+        if opt.verbose:
+            print(f'\tInner TRAIN loss: {inner_losses[-1]}')
         writer.add_scalars('SVG Loss/train', {f'{i} steps': v for i, v in enumerate(svg_losses[-1])},
                            (epoch + 1))
-        print(f'\tSVG TRAIN loss: {svg_losses[-1]}')
+        if opt.verbose:
+            print(f'\tSVG TRAIN loss: {svg_losses[-1]}')
         writer.add_scalar('Embedding/grad norm', grad_norms[-1],
                           (epoch + 1))
         writer.add_scalar('Embedding/param norm', emb_norms[-1],
@@ -614,17 +614,17 @@ for trial_num in range(opt.num_trials):
     all_grad_norms.append(copy.deepcopy(grad_norms))
     all_emb_norms.append(copy.deepcopy(emb_norms))
 
-
-print(5*'\n')
-print('all_inner_losses')
-print(all_inner_losses)
-print('all_val_inner_losses')
-print(all_val_inner_losses)
-print('all_outer_losses')
-print(all_outer_losses)
-print('all_val_outer_losses')
-print(all_val_outer_losses)
-print('all_baseline_outer_losses')
-print(all_baseline_outer_losses)
-print('all_grad_norms')
-print(all_grad_norms)
+if opt.verbose:
+    print(5*'\n')
+    print('all_inner_losses')
+    print(all_inner_losses)
+    print('all_val_inner_losses')
+    print(all_val_inner_losses)
+    print('all_outer_losses')
+    print(all_outer_losses)
+    print('all_val_outer_losses')
+    print(all_val_outer_losses)
+    print('all_baseline_outer_losses')
+    print(all_baseline_outer_losses)
+    print('all_grad_norms')
+    print(all_grad_norms)
