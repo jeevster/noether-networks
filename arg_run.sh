@@ -95,7 +95,7 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train_noether_net.py \
 --num_emb_frames 2 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir "${LOGDIR}/past${NPAST}_future${NFUTURE}_train1000_val200_lr0.0001_bs${BATCHSIZE}${TAILORING}_${EMB}/" \
+--log_dir "${LOGDIR}/past${NPAST}_future${NFUTURE}_train1000_val200_lr0.0001_bs${BATCHSIZE}${TAILORINGHUMAN}_${EMB}/" \
 --channels 2 \
 $TAILORING \
 --random_weights \
