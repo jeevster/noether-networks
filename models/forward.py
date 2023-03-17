@@ -29,7 +29,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             val_inner_lr = opt.inner_lr
             if opt.val_inner_lr != -1:
                 val_inner_lr = opt.val_inner_lr
-            _embs = torch.asarray([i.detach() for i in embs])
+            _embs = torch.stack([i.detach() for i in embs])
             experiment_id = opt.model_path.split('/')[-2]
             baseline_fname = f'eval_metrics/genseq_{experiment_id}'
             if val_inner_lr > 0 and opt.num_inner_steps > 0:
@@ -40,7 +40,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             if torch.is_tensor(_gen_seq):
                 _gen_seq = _gen_seq.detach().cpu().numpy()
             elif isinstance(_gen_seq, list):
-                _gen_seq = torch.asarray([i.detach() for i in _gen_seq]).cpu().numpy()
+                _gen_seq = torch.stack([i.detach() for i in _gen_seq]).cpu().numpy()
             np.save(baseline_fname, np.asarray(_gen_seq))
 
            

@@ -24,7 +24,7 @@ import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
 
-from torchsummary import summary
+from torchinfo import summary
 
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
@@ -97,7 +97,7 @@ parser.add_argument('--inner_opt_all_model_weights', action='store_true', help='
 parser.add_argument('--batch_norm_to_group_norm', action='store_true', help='replace BN layers with GN layers')
 parser.add_argument('--conv_emb', action='store_true', help='use fully-convolutional embedding?')
 parser.add_argument('--pde_emb', action='store_true', help='use PDE embedding?')
-
+parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='', help='path to pretrained embedding weights')
 
 
@@ -275,7 +275,7 @@ for trial_num in range(opt.num_trials):
         elif opt.pde_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size = opt.image_width, \
                                                         in_channels = opt.channels, n_frames = opt.num_emb_frames, hidden_channels = opt.fno_width, \
-                                                        n_layers = opt.fno_layers)
+                                                        n_layers = opt.fno_layers, opt=opt)
             print('initialized Reaction Diffusion Embedding')
 
         else:
@@ -286,11 +286,11 @@ for trial_num in range(opt.num_trials):
             print('initialized ConservedEmbedding')
 
         # In the case where we don't do tailoring, we can drop the embedding
-        embedding = nn.Identity() if opt.tailor else embedding
+        embedding = nn.Identity() if not opt.tailor else embedding
 
         #complete model
         svg_model = SVGModel(encoder, frame_predictor, decoder, prior, posterior, embedding).cuda()
-
+        svg_model.apply(lambda t: t.cuda())
     # load the model from ckpt
     else:
         start_epoch = int(opt.model_path.split('_')[-1].split('.')[0]) + 1
@@ -337,9 +337,14 @@ for trial_num in range(opt.num_trials):
             print(f'loading pretrained embedding from {opt.warmstart_emb_path}')
         else:
             print(f'embedding ckpt path given but no embedding found...')
-    svg_model.cuda()
-    summary(svg_model, (opt.channels, opt.image_width, opt.image_width))
-
+    
+    svg_model.apply(lambda t: t.cuda())
+    print('Eval summary')
+    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='eval', i=opt.n_past+2)
+    print('Train summary')
+    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
+    print('Emb summary')
+    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='emb', i=opt.n_past+2)
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())
     if opt.baseline:
@@ -554,10 +559,9 @@ for trial_num in range(opt.num_trials):
                     param_grads.append([-1. if p.grad is None else torch.norm(p.grad).item() for p in svg_model.parameters()])
                     grad_norm = nn.utils.clip_grad_norm_(svg_model.emb.parameters(), 1000)
                     grad_norm_sum += grad_norm.item()
-                    emb_norm_sum += torch.norm(torch.stack(
-                        [torch.norm(p.detach()) for p in svg_model.emb.parameters()]
-                    )).item()
-
+                    emb_p = [torch.norm(p.detach()) for p in svg_model.emb.parameters()]
+                    if len(emb_p) > 0:
+                        emb_norm_sum += torch.norm(torch.stack(emb_p)).item()
             if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
                 # fix the inner losses to account for jump step
                 batch_inner_losses = [batch_inner_losses[0][0]] + [l[1] for l in batch_inner_losses]

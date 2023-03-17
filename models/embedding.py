@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 import deepxde as dde
 from neuralop.models import FNO, FNO1d
-
+from os.path import join
 
 
 from models.cn import replace_cn_layers
@@ -84,7 +84,7 @@ class EncoderEmbedding(nn.Module):
 
 #2d diffusion-reaction module with learnable parameters
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
-    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers):
+    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, opt):
         super(TwoDDiffusionReactionEmbedding, self).__init__()
         #initialize learnable networks
         self.in_channels = in_channels
@@ -94,7 +94,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         self.d2_net = ParameterNet(in_size, in_channels*n_frames, hidden_channels, n_layers)
 
         #initialize grid for finite differences
-        file = h5py.File("/home/sanjeevr/noether-networks/diffusion-reaction/2D_diff-react_NA_NA.h5")
+        file = h5py.File(join(opt.data_root, "2D_diff-react_NA_NA.h5"))
         x = torch.Tensor(file['0001']['grid']['x'][:])
         y = torch.Tensor(file['0001']['grid']['y'][:])
         t = torch.Tensor(file['0001']['grid']['t'][:])

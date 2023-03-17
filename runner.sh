@@ -8,13 +8,13 @@ BS=(10 10 6 3)
 
 for i in ${!NPAST[@]}; do
     # Tailoring pass then no tailor
-    (./argrun.sh \
+    (./arg_run.sh \
     -b ${BS[$i]} \
     -t \
     -c ${CUDA[$i]} \
     ${NPAST[$i]} \
     ${NFUTURE[$i]} > ./bash_logs/${NPAST[$i]}_${NFUTURE[$i]}_tailor.txt 2>&1 && \
-    ./argrun.sh -b ${BS[$i]} \
+    ./arg_run.sh -b ${BS[$i]} \
     -c ${CUDA[$i]} \
     ${NPAST[$i]} \
     ${NFUTURE[$i]} > ./bash_logs/${NPAST[$i]}_${NFUTURE[$i]}.txt 2>&1) &
