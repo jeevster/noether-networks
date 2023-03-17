@@ -52,6 +52,7 @@ echo "Embedding: $EMB"
 if [ -z $TAILORING ]
 then
     echo "Tailoring: False"
+    TAILORINGHUMAN="_notailor"
 else
     echo "Tailoring: True"
 fi
