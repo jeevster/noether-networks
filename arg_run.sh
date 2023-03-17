@@ -9,7 +9,7 @@ TAILORINGHUMAN=''
 LOGDIR='./results/2d_reacdiff_pdeemb_FNO'
 CUDA_VISIBLE_DEVICES=''
 
-while getopts hb:tc: OPTION
+while getopts hb:tc:e: OPTION
 do
     case "$OPTION" in
         h)
@@ -26,6 +26,9 @@ do
         c)
             CUDA_VISIBLE_DEVICES="$OPTARG"
             ;;
+        e)
+            EMB="$OPTARG"
+            ;;
         ?)
             echo "$HELP" >&2
             exit 1
@@ -38,12 +41,14 @@ NFUTURE="${@:$OPTIND+1:1}"
 
 [ -z "$NPAST" ] && echo $HELP >&2 && exit 1
 [ -z "$NFUTURE" ] && echo $HELP >&2 && exit 1
+[ -z "$EMB" ] && EMB="pde_emb"
 
 echo "Args:"
 echo "Number past frames: $NPAST"
 echo "Number future frames: $NFUTURE"
 echo "Batch size: $BATCHSIZE"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
+echo "Embedding: $EMB"
 if [ -z $TAILORING ]
 then
     echo "Tailoring: False"
@@ -71,7 +76,7 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train_noether_net.py \
 --fno_width 128 \
 --fno_layers 2 \
 --emb_dim 64 \
---pde_emb \
+--$EMB \
 --batch_size $BATCHSIZE \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
@@ -89,7 +94,7 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train_noether_net.py \
 --num_emb_frames 2 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir "${LOGDIR}/past${NPAST}_future${NFUTURE}_train1000_val200_lr0.0001_bs${BATCHSIZE}${TAILOR}/" \
+--log_dir "${LOGDIR}/past${NPAST}_future${NFUTURE}_train1000_val200_lr0.0001_bs${BATCHSIZE}${TAILOR}_${EMB}/" \
 --channels 2 \
 $TAILORING \
 --random_weights \
