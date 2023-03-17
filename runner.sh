@@ -3,9 +3,7 @@
 CUDA=(6 7 8 9)
 NPAST=(2 2 2 2)
 NFUTURE=(2 5 10 20)
-BS=(10 10 6 3)
-conv_emb
-pde_emb
+BS=(6 5 3 2)
 
 
 for i in ${!NPAST[@]}; do
