@@ -285,6 +285,9 @@ for trial_num in range(opt.num_trials):
             
             print('initialized ConservedEmbedding')
 
+        # In the case where we don't do tailoring, we can drop the embedding
+        embedding = nn.Identity() if opt.tailor else embedding
+
         #complete model
         svg_model = SVGModel(encoder, frame_predictor, decoder, prior, posterior, embedding).cuda()
 
@@ -293,6 +296,7 @@ for trial_num in range(opt.num_trials):
         start_epoch = int(opt.model_path.split('_')[-1].split('.')[0]) + 1
         print(f'loading model from checkpoint (trained for {start_epoch-1} epochs)')
         ckpt = torch.load(opt.model_path)
+        #TODO Currently the PDE implementation doesn't do checkpointing
         if 'svg_model' in ckpt.keys():
             # this is usually the setting we care about, starting from pre-trained weights
             svg_model = ckpt['svg_model']
@@ -347,6 +351,8 @@ for trial_num in range(opt.num_trials):
         baseline_svg_model.cuda()
         baseline_svg_model.eval()
 
+    # TODO NC: I'm pretty sure none of this neads to be changed since we're using identity now.
+
     # Init outer optimizer
     emb_params = [p[1] for p in svg_model.emb.named_parameters() if not ('gamma' in p[0] or 'beta' in p[0])]
 
@@ -390,6 +396,9 @@ for trial_num in range(opt.num_trials):
     param_grads = []
     grad_norms =  []
     emb_norms = []
+
+    print('Final Model:')
+    print(svg_model)
 
     print(f'starting at epoch {start_epoch}')
     for epoch in range(start_epoch, opt.n_epochs):
@@ -439,6 +448,8 @@ for trial_num in range(opt.num_trials):
                     # associated with unrolling the sequence in the inner loop for many steps
 
                     #perform tailoring (autoregressive prediciton, tailoring, predict again)
+
+                    # Tailor many steps uses opt.tailor to decide whether to tailor or not
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                         svg_model, batch, opt=opt, track_higher_grads=False,  # no need for higher grads in val
                         mode='eval',
@@ -462,7 +473,7 @@ for trial_num in range(opt.num_trials):
                     if opt.baseline:
                         baseline_outer_loss += base_outer_loss.detach().cpu().numpy().item()
 
-                if opt.num_inner_steps > 0 or opt.num_jump_steps > 0:
+                if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
                     # fix the inner losses to account for jump step
                     # after the zeroth, take the tailored inner loss (index 1)
                     val_batch_svg_losses = [val_batch_svg_losses[0][0]] + [l[1] for l in val_batch_svg_losses]
@@ -471,7 +482,7 @@ for trial_num in range(opt.num_trials):
                     val_batch_svg_losses = [val_batch_svg_losses[0][0]]
                     val_batch_inner_losses = [val_batch_inner_losses[0][0]]
 
-                epoch_val_inner_losses.append(val_batch_inner_losses)
+                epoch_val_inner_losses.append(val_batch_inner_losses) # Should be zero when opt.tailor is False
                 epoch_val_svg_losses.append(val_batch_svg_losses)
 
             val_inner_losses.append([sum(x) / (opt.num_val_batch) for x in zip(*epoch_val_inner_losses)])
@@ -509,6 +520,7 @@ for trial_num in range(opt.num_trials):
             for batch_step in range(opt.num_jump_steps + 1):    
 
                 #rollout, tailoring, rollout
+                # Again, tailor_many_steps uses opt.tailor to decide whether to tailor or not
                 gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                     svg_model, batch, opt=opt, track_higher_grads=True,
                     mode=train_mode,
@@ -548,7 +560,7 @@ for trial_num in range(opt.num_trials):
                         [torch.norm(p.detach()) for p in svg_model.emb.parameters()]
                     )).item()
 
-            if opt.num_inner_steps > 0 or opt.num_jump_steps > 0:
+            if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
                 # fix the inner losses to account for jump step
                 batch_inner_losses = [batch_inner_losses[0][0]] + [l[1] for l in batch_inner_losses]
                 batch_svg_losses = [batch_svg_losses[0][0]] + [l[1] for l in batch_svg_losses]
