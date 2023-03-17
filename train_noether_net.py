@@ -339,17 +339,13 @@ for trial_num in range(opt.num_trials):
             print(f'embedding ckpt path given but no embedding found...')
     
     svg_model.apply(lambda t: t.cuda())
-    model_kwargs = {
-        "opt":opt, 
-        "mode":'eval',
-        "i":opt.n_past+2,
-    }
     print('Eval summary')
-    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), mode='eval', kwargs=model_kwargs)
+    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='eval', i=opt.n_past+2)
     print('Train summary')
-    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), mode='train', kwargs=model_kwargs)
+    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
     print('Emb summary')
-    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), kwargs=model_kwargs)
+    summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
+    
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())
     if opt.baseline:
