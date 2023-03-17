@@ -344,7 +344,7 @@ for trial_num in range(opt.num_trials):
     print('Train summary')
     summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
     print('Emb summary')
-    summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
+    # summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
     
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())

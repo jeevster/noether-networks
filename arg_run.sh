@@ -52,7 +52,7 @@ else
 fi
 
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
-python train_noether_net.py \
+CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train_noether_net.py \
 --image_width 128 \
 --g_dim 128 \
 --z_dim 64 \
