@@ -6,7 +6,7 @@ DATADIR=/data/nithinc/PDEs/2D/diffusion-reaction
 BATCHSIZE=10
 TAILORING=''
 TAILORINGHUMAN=''
-LOGDIR='/results/2d_reacdiff_pdeemb_FNO'
+LOGDIR='./results/2d_reacdiff_pdeemb_FNO'
 CUDA_VISIBLE_DEVICES=''
 
 while getopts hb:tc: OPTION
