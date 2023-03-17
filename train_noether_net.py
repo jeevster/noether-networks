@@ -482,7 +482,10 @@ for trial_num in range(opt.num_trials):
                     val_batch_inner_losses = [val_batch_inner_losses[0][0]] + [l[1] for l in val_batch_inner_losses]
                 else:
                     val_batch_svg_losses = [val_batch_svg_losses[0][0]]
-                    val_batch_inner_losses = [val_batch_inner_losses[0][0]]
+                    if opt.tailor:
+                        val_batch_inner_losses = [val_batch_inner_losses[0][0]]
+                    else:
+                        val_batch_inner_losses = [0]
 
                 epoch_val_inner_losses.append(val_batch_inner_losses) # Should be zero when opt.tailor is False
                 epoch_val_svg_losses.append(val_batch_svg_losses)
@@ -568,8 +571,11 @@ for trial_num in range(opt.num_trials):
                 batch_inner_losses = [batch_inner_losses[0][0]] + [l[1] for l in batch_inner_losses]
                 batch_svg_losses = [batch_svg_losses[0][0]] + [l[1] for l in batch_svg_losses]
             else:
-                batch_inner_losses = [batch_inner_losses[0][0]]
                 batch_svg_losses = [batch_svg_losses[0][0]]
+                if opt.tailor:
+                    batch_inner_losses = [batch_inner_losses[0][0]]
+                else:
+                    batch_svg_losses = [0 for _ in range(len(batch_svg_losses))]
 
             epoch_inner_losses.append(batch_inner_losses)
             epoch_svg_losses.append(batch_svg_losses)
