@@ -22,7 +22,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
     elif num_emb_frames == 2:
         # TODO: verify exact number of frames coming in 
         stacked_gen_seq = []
-        for i in range(1, len(gen_seq)):
+        for i in range(2, len(gen_seq)):
             stacked_gen_seq.append(torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
         embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]  # len(embs) = len(gen_seq) - 1
         if setting == 'eval':
