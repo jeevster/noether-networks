@@ -14,6 +14,8 @@ import itertools
 import numpy as np
 import copy
 import higher
+from datetime import datetime
+from torch.utils.tensorboard.summary import hparams
 
 from models.forward import predict_many_steps, tailor_many_steps
 from models.cn import replace_cn_layers
@@ -99,7 +101,7 @@ parser.add_argument('--conv_emb', action='store_true', help='use fully-convoluti
 parser.add_argument('--pde_emb', action='store_true', help='use PDE embedding?')
 parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='', help='path to pretrained embedding weights')
-
+parser.add_argument('--log_exp_subset', default='', help='Prefix for experiments. Use this to group runs.')
 
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
@@ -127,8 +129,30 @@ dtype = torch.cuda.FloatTensor
 
 # --------- tensorboard configs -------------------------------
 from torch.utils.tensorboard import SummaryWriter
+tailor_str = 'None'
+if opt.tailor:
+    if opt.pde_emb:
+        tailor_str = 'PDE'
+    elif opt.conv_emb:
+        tailor_str = 'Conv'
+writer = SummaryWriter(os.path.join(opt.log_dir, 
+                                    opt.log_exp_subset, 
+                                    str(datetime.now().ctime().replace(' ', '-').replace(':','.')) + \
+                                       f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}'))
+if opt.tailor:
+    max_tailor_steps = opt.num_tailor_steps + 1
+    custom_scalars = {
+        "Inner Loss": {
+            "Train": ["Multiline", [f"Inner Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
+            "Val": ["Multiline", [f"Inner Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
+        },
+        "SVG Loss": {
+            "Train": ["Multiline", [f"SVG Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
+            "Val": ["Multiline", [f"SVG Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
+        },
+    }
+    writer.add_custom_scalars(custom_scalars)
 
-writer = SummaryWriter(os.path.join(opt.log_dir), 'tensorboard')
 
 # --------- load a dataset ------------------------------------
 train_data, test_data = utils.load_dataset(opt)
@@ -503,12 +527,13 @@ for trial_num in range(opt.num_trials):
                                   (epoch + 1))
                 if opt.verbose:
                     print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
-            writer.add_scalars('Inner Loss/val', {f'{i} steps': v for i, v in enumerate(val_inner_losses[-1])},
-                               (epoch + 1))
+            if opt.tailor:
+                for step, value in enumerate(val_inner_losses[-1]):
+                    writer.add_scalar(f'Inner Loss/val/{step} Step', value, (epoch + 1))
             if opt.verbose:
                 print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
-            writer.add_scalars('SVG Loss/val', {f'{i} steps': v for i, v in enumerate(val_svg_losses[-1])},
-                               (epoch + 1))
+            for step, value in enumerate(val_svg_losses[-1]):
+                writer.add_scalar(f'SVG Loss/val/{step} Step', value, (epoch + 1))
             if opt.verbose:
                 print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
             writer.flush()
@@ -592,18 +617,22 @@ for trial_num in range(opt.num_trials):
         outer_losses.append(train_outer_loss / (opt.num_train_batch))
         writer.add_scalar('Outer Loss/train', outer_losses[-1],
                           (epoch + 1))
-        writer.add_scalars('Inner Loss/train', {f'{i} steps': v for i, v in enumerate(inner_losses[-1])},
-                           (epoch + 1))
+        if opt.tailor:
+            for step, value in enumerate(inner_losses[-1]):
+                writer.add_scalar(f'Inner Loss/train/{step} Step', value, (epoch + 1))
+
         if opt.verbose:
             print(f'\tInner TRAIN loss: {inner_losses[-1]}')
-        writer.add_scalars('SVG Loss/train', {f'{i} steps': v for i, v in enumerate(svg_losses[-1])},
-                           (epoch + 1))
+        for step, value in enumerate(svg_losses[-1]):
+            writer.add_scalar(f'SVG Loss/train/{step} Step', value, (epoch + 1))
+
         if opt.verbose:
             print(f'\tSVG TRAIN loss: {svg_losses[-1]}')
-        writer.add_scalar('Embedding/grad norm', grad_norms[-1],
-                          (epoch + 1))
-        writer.add_scalar('Embedding/param norm', emb_norms[-1],
-                          (epoch + 1))
+        if opt.tailor:
+            writer.add_scalar('Embedding/grad norm', grad_norms[-1],
+                            (epoch + 1))
+            writer.add_scalar('Embedding/param norm', emb_norms[-1],
+                            (epoch + 1))
         if opt.learn_inner_lr:
             writer.add_scalar('Embedding/inner LR scale factor', svg_model.inner_lr_scale,
                               (epoch + 1))
@@ -624,6 +653,83 @@ for trial_num in range(opt.num_trials):
     all_param_grads.append(copy.deepcopy(param_grads))
     all_grad_norms.append(copy.deepcopy(grad_norms))
     all_emb_norms.append(copy.deepcopy(emb_norms))
+
+# Log hyper parameters and final losses 
+final_metrics = {}
+metrics = [
+    'Outer Loss/train',
+    'Outer Loss/val',
+    'Inner Loss/train',
+    'Inner Loss/val',
+]
+metric_lists = [
+    all_outer_losses,
+    all_val_outer_losses,
+    all_inner_losses,
+    all_val_inner_losses,
+]
+
+if opt.tailor:
+    metrics.pop()
+    metrics.pop()
+    metric_lists.pop()
+    metric_lists.pop()
+
+for metric, metric_list in zip(metrics, metric_lists):
+    final_metrics['Best ' + metric] = min(*[i for j in metric_list for i in j])
+
+hyperparameters = {
+    'tailor': tailor_str,
+    'batch_size': opt.batch_size,
+    'seed': opt.seed,
+    'n_past': opt.n_past,
+    'n_future': opt.n_future,
+    'dataset': opt.dataset,
+    'image_width': opt.image_width,
+    'n_epochs': opt.n_epochs,
+    'channels': opt.channels,
+    'num_epochs_per_val': opt.num_epochs_per_val,
+    'num_inner_steps': opt.num_inner_steps,
+    'num_jump_steps': opt.num_jump_steps,
+    'num_train_batch': opt.num_train_batch,
+    'num_val_batch': opt.num_val_batch,
+    'inner_lr': opt.inner_lr,
+    'val_inner_lr': opt.val_inner_lr,
+    'outer_lr': opt.outer_lr,
+    'emb_dim': opt.emb_dim,
+    'num_trials': opt.num_trials,
+    'inner_crit_mode': opt.inner_crit_mode,
+    'enc_dec_type': opt.enc_dec_type,
+    'emb_type': opt.emb_type,
+    'outer_opt_model_weights': opt.outer_opt_model_weights,
+    'reuse_lstm_eps': opt.reuse_lstm_eps,
+    'only_twenty_degree': opt.only_twenty_degree,
+    'center_crop': opt.center_crop,
+    'crop_upper_right': opt.crop_upper_right,
+    'frame_step': opt.frame_step,
+    'num_emb_frames': opt.num_emb_frames,
+    'horiz_flip': opt.horiz_flip,
+    'train_set_length': opt.train_set_length,
+    'test_set_length': opt.test_set_length,
+    'encoder_emb': opt.encoder_emb,
+    'z_dim': opt.z_dim,
+    'g_dim': opt.g_dim,
+    'a_dim': opt.a_dim,
+    'fno_modes': opt.fno_modes,
+    'fno_width': opt.fno_width,
+    'fno_layers': opt.fno_layers,
+    'inner_opt_all_model_weights': opt.inner_opt_all_model_weights,
+    'batch_norm_to_group_norm': opt.batch_norm_to_group_norm,
+    'conv_emb': opt.conv_emb,
+    'pde_emb': opt.pde_emb,
+}
+hparams_logging = hparams(hyperparameters, final_metrics)
+for i in hparams_logging:
+    writer.file_writer.add_summary(i)
+for k, v in final_metrics.items():
+    writer.add_scalar(f'Final Metrics/{k}', v)
+writer.flush()
+writer.close()
 
 if opt.verbose:
     print(5*'\n')
