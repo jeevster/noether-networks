@@ -9,7 +9,7 @@ python train_noether_net.py \
 --data_root /home/sanjeevr/noether-networks/diffusion-reaction \
 --num_trials 1 \
 --n_past 1 \
---n_future 2 \
+--n_future 10 \
 --num_threads 0 \
 --ckpt_every 10 \
 --inner_crit_mode mse \
@@ -21,15 +21,15 @@ python train_noether_net.py \
 --fno_layers 2 \
 --emb_dim 64 \
 --pde_emb \
---batch_size 10 \
+--batch_size 4 \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
 --n_epochs 100 \
 --train_set_length 1000 \
 --test_set_length 200 \
---inner_lr .0001 \
---val_inner_lr .0001 \
---outer_lr .0001 \
+--inner_lr .00001 \
+--val_inner_lr .00001 \
+--outer_lr .00001 \
 --outer_opt_model_weights \
 --random_weights \
 --only_twenty_degree \
@@ -38,7 +38,7 @@ python train_noether_net.py \
 --num_emb_frames 2 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir ./results/2d_reacdiff_pdeembfourthorder_FNO/past1_fut2_train1000_val200_lr0.0001_bs10_tailor/ \
+--log_dir ./results/2d_reacdiff_pdeembfourthorder_FNO/past1_fut10_train1000_val200_lr0.00001_bs4_tailor/ \
 --channels 2 \
 --tailor \
 --random_weights \
