@@ -5,8 +5,7 @@ HELP="script usage: $(basename $0) [-b batch size (default 10)] [-t Tailoring fl
 DATADIR=/data/nithinc/PDEs/2D/diffusion-reaction
 BATCHSIZE=10
 TAILORING=''
-TAILORINGHUMAN=''
-LOGDIR='./results/2d_reacdiff_pdeemb_FNO'
+LOGDIR='./results/2d_reaction_diffusion'
 CUDA_VISIBLE_DEVICES=''
 
 while getopts hb:tc:e: OPTION
@@ -21,7 +20,6 @@ do
             ;;
         t)
             TAILORING='--tailor'
-            TAILORINGHUMAN='_tailor'
             ;;
         c)
             CUDA_VISIBLE_DEVICES="$OPTARG"
@@ -52,7 +50,6 @@ echo "Embedding: $EMB"
 if [ -z $TAILORING ]
 then
     echo "Tailoring: False"
-    TAILORINGHUMAN="_notailor"
 else
     echo "Tailoring: True"
 fi
@@ -95,7 +92,7 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python train_noether_net.py \
 --num_emb_frames 2 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir "${LOGDIR}/past${NPAST}_future${NFUTURE}_train1000_val200_lr0.0001_bs${BATCHSIZE}${TAILORINGHUMAN}_${EMB}/" \
+--log_dir "${LOGDIR}" \
 --channels 2 \
 $TAILORING \
 --random_weights \
