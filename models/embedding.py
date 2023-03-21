@@ -87,14 +87,17 @@ class EncoderEmbedding(nn.Module):
         return out
 
 
-def ConstantLayer(constant):
-    '''returns a layer that returns a constant value (batched)'''
-    const_tensor = torch.Tensor([constant]).cuda().double()
+class ConstantLayer(nn.Module):
+    '''layer that returns a constant value (batched)'''
 
-    def layer(x, *args, **kwargs):
+    def __init__(self, constant) -> None:
+        super().__init__()
+        self.const_tensor = torch.Tensor([constant]).cuda().double()
+        self.const_tensor.requires_grad = False
+
+    def forward(self, x):
         b_size = x.shape[0]
-        return const_tensor.expand(b_size, -1)
-    return layer
+        return self.const_tensor.expand(b_size, -1)
 
 
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
