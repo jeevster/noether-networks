@@ -1,3 +1,6 @@
 [submodule "neuraloperator"]
 	path = neuraloperator
 	url = https://github.com/nithinvc/neuraloperator
+[submodule "RobotNet"]
+	path = src/robonet
+	url = https://github.com/SudeepDasari/RoboNet.git
