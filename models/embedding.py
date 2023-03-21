@@ -12,7 +12,7 @@ import numpy as np
 import deepxde as dde
 from neuralop.models import FNO, FNO1d
 from os.path import join
-
+from functools import partial
 
 from models.cn import replace_cn_layers
 
@@ -39,10 +39,9 @@ class ConservedEmbedding(nn.Module):
         return out
 
 
-'''fully convolutional conserved embedding'''
-
-
 class ConvConservedEmbedding(nn.Module):
+    '''fully convolutional conserved embedding'''
+
     def __init__(self, image_width=64, nc=3):
         super(ConvConservedEmbedding, self).__init__()
         self.num_channels = nc
@@ -88,22 +87,38 @@ class EncoderEmbedding(nn.Module):
         return out
 
 
-# 2d diffusion-reaction module with learnable parameters
+def ConstantLayer(constant):
+    '''returns a layer that returns a constant value (batched)'''
+    const_tensor = torch.Tensor([constant]).cuda().double()
+
+    def layer(x, *args, **kwargs):
+        b_size = x.shape[0]
+        return const_tensor.expand(b_size, -1)
+    return layer
+
+
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
-    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, opt):
+    # 2d diffusion-reaction module with learnable parameters
+    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, data_root, learned):
         super(TwoDDiffusionReactionEmbedding, self).__init__()
         # initialize learnable networks
         self.in_channels = in_channels
         self.in_size = in_size
-        self.k_net = ParameterNet(
-            in_size, in_channels*n_frames, hidden_channels, n_layers)
-        self.d1_net = ParameterNet(
-            in_size, in_channels*n_frames, hidden_channels, n_layers)
-        self.d2_net = ParameterNet(
-            in_size, in_channels*n_frames, hidden_channels, n_layers)
 
+        # param is either a newtwork or a callable constant
+        if learned:
+            self.k = ParameterNet(
+                in_size, in_channels*n_frames, hidden_channels, n_layers)
+            self.Du = ParameterNet(
+                in_size, in_channels*n_frames, hidden_channels, n_layers)
+            self.Dv = ParameterNet(
+                in_size, in_channels*n_frames, hidden_channels, n_layers)
+        else:
+            self.k = ConstantLayer(5e-3)
+            self.Du = ConstantLayer(1e-3)
+            self.Dv = ConstantLayer(5e-3)
         # initialize grid for finite differences
-        file = h5py.File(join(opt.data_root, "2D_diff-react_NA_NA.h5"))
+        file = h5py.File(join(data_root, "2D_diff-react_NA_NA.h5"))
         x = torch.Tensor(file['0001']['grid']['x'][:])
         y = torch.Tensor(file['0001']['grid']['y'][:])
         t = torch.Tensor(file['0001']['grid']['t'][:])
@@ -119,7 +134,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
     def reaction_1(self, solution_field):
         u = solution_field[:, -1, 0]
         v = solution_field[:, -1, 1]
-        return u - (u * u * u) - self.k_net(solution_field).unsqueeze(-1) - v
+        return u - (u * u * u) - self.k(solution_field).unsqueeze(-1) - v
 
     def reaction_2(self, solution_field):
         u = solution_field[:, -1, 0]
@@ -160,9 +175,12 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # compute time derivatives on stack of frames (use 1st order backward difference scheme)
         du_t = (last_u - u_stack[:, -2]) / self.dt
         dv_t = (last_v - v_stack[:, -2]) / self.dt
-        eq1 = du_t - self.reaction_1(solution_field) - self.d1_net(
+
+        # du_dt = Du*du_dxx + Du*du_dyy + Ru
+        eq1 = du_t - self.reaction_1(solution_field) - self.Du(
             solution_field).unsqueeze(-1) * (du_xx + du_yy)
-        eq2 = dv_t - self.reaction_2(solution_field) - self.d2_net(
+        # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
+        eq2 = dv_t - self.reaction_2(solution_field) - self.Dv(
             solution_field).unsqueeze(-1) * (dv_xx + dv_yy)
 
         return (eq1 + eq2)[:, 2:-2, 2:-2]

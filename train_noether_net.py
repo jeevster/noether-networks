@@ -162,6 +162,8 @@ parser.add_argument('--conv_emb', action='store_true',
                     help='use fully-convolutional embedding?')
 parser.add_argument('--pde_emb', action='store_true',
                     help='use PDE embedding?')
+parser.add_argument('--pde_const_emb', action='store_true',
+                    help='PDEI embedding without learning parameters.')
 parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
@@ -197,6 +199,8 @@ if opt.tailor:
         tailor_str = 'PDE'
     elif opt.conv_emb:
         tailor_str = 'Conv'
+    elif opt.pde_const_emb:
+        tailor_str = 'PDE_Const'
 writer = SummaryWriter(os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}'))
@@ -367,9 +371,12 @@ for trial_num in range(opt.num_trials):
         elif opt.pde_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                        in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                       n_layers=opt.fno_layers, opt=opt)
+                                                       n_layers=opt.fno_layers, data_root=opt.data_root, learned=True)
             print('initialized Reaction Diffusion Embedding')
-
+        elif opt.pde_const_emb:
+            embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
+                                                       in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+                                                       n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
         else:
             # embedding model
             embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,
@@ -500,6 +507,11 @@ for trial_num in range(opt.num_trials):
     param_grads = []
     grad_norms = []
     emb_norms = []
+
+    # Quick sanity check to ensure float64
+    for p in svg_model.named_parameters():
+        assert p[
+            1].dtype == torch.float64, f'One of the SVG Model parameters is not float64! Parameter: {p[1]}'
 
     print(f'starting at epoch {start_epoch}')
     for epoch in range(start_epoch, opt.n_epochs):
@@ -822,6 +834,7 @@ hyperparameters = {
     'batch_norm_to_group_norm': opt.batch_norm_to_group_norm,
     'conv_emb': opt.conv_emb,
     'pde_emb': opt.pde_emb,
+    'pde_const_emb': opt.pde_const_emb,
 }
 hparams_logging = hparams(hyperparameters, final_metrics)
 for i in hparams_logging:
