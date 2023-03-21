@@ -781,14 +781,16 @@ metric_lists = [
     all_val_inner_losses,
 ]
 
-if opt.tailor:
+if not opt.tailor:
     metrics.pop()
     metrics.pop()
     metric_lists.pop()
     metric_lists.pop()
 
 for metric, metric_list in zip(metrics, metric_lists):
-    final_metrics['Best ' + metric] = min(*[i for j in metric_list for i in j])
+    # grab the last loss
+    final_metrics['Best ' + metric] = min(*[i[-1]
+                                          for j in metric_list for i in j])
 
 hyperparameters = {
     'tailor': tailor_str,
@@ -840,7 +842,7 @@ hparams_logging = hparams(hyperparameters, final_metrics)
 for i in hparams_logging:
     writer.file_writer.add_summary(i)
 for k, v in final_metrics.items():
-    writer.add_scalar(f'Final Metrics/{k}', v)
+    writer.add_scalar(f'{k}', v)
 writer.flush()
 writer.close()
 
