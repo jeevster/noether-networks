@@ -444,10 +444,10 @@ for trial_num in range(opt.num_trials):
     svg_model.apply(lambda t: t.cuda())
     print('Eval summary')
     summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width,
-            opt.image_width), device=torch.device("cuda"), opt=opt, mode='eval', i=opt.n_past+2)
+            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='eval', i=opt.n_past+2)
     print('Train summary')
     summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width,
-            opt.image_width), device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
+            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
     print('Emb summary')
     # summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
 
