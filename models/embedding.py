@@ -132,11 +132,13 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #compute spatial derivatives only on most recent frame (use 2nd order central difference scheme)
         last_u = u_stack[:, -1]
         last_v = v_stack[:, -1]
-        du_xx = (last_u[:, 2:, 1:-1] -2*last_u[:,1:-1,1:-1] +last_u[:, :-2, 1:-1]) / (self.dx**2)
-        du_yy = (last_u[:, 1:-1, 2:] -2*last_u[:,1:-1,1:-1] +last_u[:, 1:-1, :-2]) / (self.dy**2)
-        dv_xx = (last_v[:, 2:, 1:-1] -2*last_v[:,1:-1,1:-1] +last_v[:, :-2, 1:-1]) / (self.dx**2)
-        dv_yy = (last_v[:, 1:-1, 2:] -2*last_v[:,1:-1,1:-1] +last_v[:, 1:-1, :-2]) / (self.dy**2)
+        du_xx = (-1*last_u[:, 0:-4, 2:-2] + 16*last_u[:, 1:-3, 2:-2] -30*last_u[:,2:-2,2:-2] + 16*last_u[:, 3:-1, 2:-2] -1*last_u[:, 4:, 2:-2]) / (12*self.dx**2)
+        du_yy = (-1*last_u[:, 2:-2, 0:-4] + 16*last_u[:, 2:-2, 1:-3] -30*last_u[:,2:-2,2:-2] + 16*last_u[:, 2:-2, 3:-1] -1*last_u[:, 2:-2, 4:]) / (12*self.dx**2)
 
+        dv_xx = (-1*last_v[:, 0:-4, 2:-2] + 16*last_v[:, 1:-3, 2:-2] -30*last_v[:,2:-2,2:-2] + 16*last_v[:, 3:-1, 2:-2] -1*last_v[:, 4:, 2:-2]) / (12*self.dx**2)
+        dv_yy = (-1*last_v[:, 2:-2, 0:-4] + 16*last_v[:, 2:-2, 1:-3] -30*last_v[:,2:-2,2:-2] + 16*last_v[:, 2:-2, 3:-1] -1*last_v[:, 2:-2, 4:]) / (12*self.dx**2)
+        
+        
         #pad with zeros
         du_xx = utils.pad_zeros(du_xx, self.in_size)
         du_yy = utils.pad_zeros(du_yy, self.in_size)
@@ -148,8 +150,8 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         dv_t = (last_v - v_stack[:, -2]) / self.dt
         eq1 = du_t - self.reaction_1(solution_field) - self.d1_net(solution_field).unsqueeze(-1) * (du_xx + du_yy)
         eq2 = dv_t - self.reaction_2(solution_field) - self.d2_net(solution_field).unsqueeze(-1) * (dv_xx + dv_yy)
-
-        return eq1 + eq2
+        
+        return (eq1 + eq2)[:, 2:-2, 2:-2]
 
 
 class ParameterNet(nn.Module):
