@@ -163,7 +163,7 @@ parser.add_argument('--conv_emb', action='store_true',
 parser.add_argument('--pde_emb', action='store_true',
                     help='use PDE embedding?')
 parser.add_argument('--pde_const_emb', action='store_true',
-                    help='PDEI embedding without learning parameters.')
+                    help='PDE embedding without learning parameters.')
 parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
@@ -205,7 +205,7 @@ writer = SummaryWriter(os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}'))
 if opt.tailor:
-    max_tailor_steps = opt.num_tailor_steps + 1
+    max_tailor_steps = opt.num_inner_steps + 1
     custom_scalars = {
         "Inner Loss": {
             "Train": ["Multiline", [f"Inner Loss/train/{i} Steps" for i in range(max_tailor_steps)]],

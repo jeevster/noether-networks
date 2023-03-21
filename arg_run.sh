@@ -1,7 +1,8 @@
 #!/bin/bash
 
 ### Only difference to run.sh is the arguments you can use
-HELP="script usage: $(basename $0) [-b batch size (default 10)] [-t Tailoring flag] [-c Cuda device (default '')] n_past n_future"
+HELP="script usage: $(basename $0) [-e embedding choice] [-b batch size (default 10)] [-t Tailoring flag] [-c Cuda device (default '')] n_past n_future
+\t Embedding must be one of 'conv_emb', 'pde_emb', 'pde_const_emb'. Unused when -t is not set."
 DATADIR=/data/nithinc/PDEs/2D/diffusion-reaction
 BATCHSIZE=10
 TAILORING=''
