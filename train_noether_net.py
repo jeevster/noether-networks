@@ -1,7 +1,8 @@
+import torch
+# This sets the default model weights to float64
+torch.set_default_dtype(torch.float64)  # nopep8
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-
-import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
@@ -186,7 +187,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
-dtype = torch.cuda.FloatTensor
+dtype = torch.cuda.DoubleTensor
 
 
 # --------- tensorboard configs -------------------------------

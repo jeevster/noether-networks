@@ -35,10 +35,10 @@ class PINNDataset1D(Dataset):
             # build input data from individual dimensions
             # dim x = [x]
             self.data_grid_x = torch.tensor(
-                seed_group["grid"]["x"], dtype=torch.float)
+                seed_group["grid"]["x"], dtype=torch.float64)
             # # dim t = [t]
             self.data_grid_t = torch.tensor(
-                seed_group["grid"]["t"], dtype=torch.float)
+                seed_group["grid"]["t"], dtype=torch.float64)
 
             XX, TT = torch.meshgrid(
                 [self.data_grid_x, self.data_grid_t],
@@ -48,7 +48,7 @@ class PINNDataset1D(Dataset):
             self.data_input = torch.vstack([XX.ravel(), TT.ravel()]).T
 
             self.data_output = torch.tensor(
-                np.array(seed_group["data"]), dtype=torch.float
+                np.array(seed_group["data"]), dtype=torch.float64
             )
 
             # permute from [t, x] -> [x, t]
@@ -134,13 +134,13 @@ class PINNDataset2D(Dataset):
             # build input data from individual dimensions
             # dim x = [x]
             self.data_grid_x = torch.tensor(
-                seed_group["grid"]["x"], dtype=torch.float)
+                seed_group["grid"]["x"], dtype=torch.float64)
             # # dim y = [y]
             self.data_grid_y = torch.tensor(
-                seed_group["grid"]["y"], dtype=torch.float)
+                seed_group["grid"]["y"], dtype=torch.float64)
             # # dim t = [t]
             self.data_grid_t = torch.tensor(
-                seed_group["grid"]["t"], dtype=torch.float)
+                seed_group["grid"]["t"], dtype=torch.float64)
 
             XX, YY, TT = torch.meshgrid(
                 [self.data_grid_x, self.data_grid_y, self.data_grid_t],
@@ -151,7 +151,7 @@ class PINNDataset2D(Dataset):
                 [XX.ravel(), YY.ravel(), TT.ravel()]).T
 
             self.data_output = torch.tensor(
-                np.array(seed_group["data"]), dtype=torch.float
+                np.array(seed_group["data"]), dtype=torch.float64
             )
 
             # permute from [t, x, y] -> [x, y, t]
@@ -342,21 +342,21 @@ class PINNDataset1Dpde(Dataset):
         # build input data from individual dimensions
         # dim x = [x]
         self.data_grid_x = torch.tensor(
-            h5_file["x-coordinate"], dtype=torch.float)
+            h5_file["x-coordinate"], dtype=torch.float64)
         self.dx = self.data_grid_x[1] - self.data_grid_x[0]
         self.xL = self.data_grid_x[0] - 0.5 * self.dx
         self.xR = self.data_grid_x[-1] + 0.5 * self.dx
         self.xdim = self.data_grid_x.size(0)
         # # dim t = [t]
         self.data_grid_t = torch.tensor(
-            h5_file["t-coordinate"], dtype=torch.float)
+            h5_file["t-coordinate"], dtype=torch.float64)
 
         # main data
         keys = list(h5_file.keys())
         keys.sort()
         if 'tensor' in keys:
             self.data_output = torch.tensor(np.array(h5_file["tensor"][val_batch_idx]),
-                                            dtype=torch.float)
+                                            dtype=torch.float64)
             # permute from [t, x] -> [x, t]
             self.data_output = self.data_output.T
 
@@ -374,7 +374,7 @@ class PINNDataset1Dpde(Dataset):
             # permute from [t, x] -> [x, t]
             _data = np.transpose(_data, (1, 0, 2))
 
-            self.data_output = torch.tensor(_data, dtype=torch.float)
+            self.data_output = torch.tensor(_data, dtype=torch.float64)
             del (_data, _data1, _data2, _data3)
 
             # for init/boundary conditions
@@ -470,7 +470,7 @@ class PINNDataset2Dpde(Dataset):
         # build input data from individual dimensions
         # dim x = [x]
         self.data_grid_x = torch.tensor(
-            h5_file["x-coordinate"], dtype=torch.float)
+            h5_file["x-coordinate"], dtype=torch.float64)
         self.data_grid_x = self.data_grid_x[::rdc_x]
         self.dx = self.data_grid_x[1] - self.data_grid_x[0]
         self.xL = self.data_grid_x[0] - 0.5 * self.dx
@@ -478,7 +478,7 @@ class PINNDataset2Dpde(Dataset):
         self.xdim = self.data_grid_x.size(0)
         # dim y = [y]
         self.data_grid_y = torch.tensor(
-            h5_file["y-coordinate"], dtype=torch.float)
+            h5_file["y-coordinate"], dtype=torch.float64)
         self.data_grid_y = self.data_grid_y[::rdc_y]
         self.dy = self.data_grid_y[1] - self.data_grid_y[0]
         self.yL = self.data_grid_y[0] - 0.5 * self.dy
@@ -486,7 +486,7 @@ class PINNDataset2Dpde(Dataset):
         self.ydim = self.data_grid_y.size(0)
         # # dim t = [t]
         self.data_grid_t = torch.tensor(
-            h5_file["t-coordinate"], dtype=torch.float)
+            h5_file["t-coordinate"], dtype=torch.float64)
 
         # main data
         _data1 = np.array(h5_file["density"][val_batch_idx])
@@ -499,7 +499,7 @@ class PINNDataset2Dpde(Dataset):
         _data = np.transpose(_data, (1, 2, 0, 3))
         _data = _data[::rdc_x, ::rdc_y]
 
-        self.data_output = torch.tensor(_data, dtype=torch.float)
+        self.data_output = torch.tensor(_data, dtype=torch.float64)
         del (_data, _data1, _data2, _data3, _data4)
 
         # for init/boundary conditions
@@ -597,7 +597,7 @@ class PINNDataset3Dpde(Dataset):
         # build input data from individual dimensions
         # dim x = [x]
         self.data_grid_x = torch.tensor(
-            h5_file["x-coordinate"], dtype=torch.float)
+            h5_file["x-coordinate"], dtype=torch.float64)
         self.data_grid_x = self.data_grid_x[::rdc_x]
         self.dx = self.data_grid_x[1] - self.data_grid_x[0]
         self.xL = self.data_grid_x[0] - 0.5 * self.dx
@@ -605,7 +605,7 @@ class PINNDataset3Dpde(Dataset):
         self.xdim = self.data_grid_x.size(0)
         # dim y = [y]
         self.data_grid_y = torch.tensor(
-            h5_file["y-coordinate"], dtype=torch.float)
+            h5_file["y-coordinate"], dtype=torch.float64)
         self.data_grid_y = self.data_grid_y[::rdc_y]
         self.dy = self.data_grid_y[1] - self.data_grid_y[0]
         self.yL = self.data_grid_y[0] - 0.5 * self.dy
@@ -613,7 +613,7 @@ class PINNDataset3Dpde(Dataset):
         self.ydim = self.data_grid_y.size(0)
         # dim z = [z]
         self.data_grid_z = torch.tensor(
-            h5_file["z-coordinate"], dtype=torch.float)
+            h5_file["z-coordinate"], dtype=torch.float64)
         self.data_grid_z = self.data_grid_z[::rdc_z]
         self.dz = self.data_grid_z[1] - self.data_grid_z[0]
         self.zL = self.data_grid_z[0] - 0.5 * self.dz
@@ -621,7 +621,7 @@ class PINNDataset3Dpde(Dataset):
         self.zdim = self.data_grid_z.size(0)
         # # dim t = [t]
         self.data_grid_t = torch.tensor(
-            h5_file["t-coordinate"], dtype=torch.float)
+            h5_file["t-coordinate"], dtype=torch.float64)
 
         # main data
         _data1 = np.array(h5_file["density"][val_batch_idx])
@@ -635,7 +635,7 @@ class PINNDataset3Dpde(Dataset):
         _data = np.transpose(_data, (1, 2, 3, 0, 4))
         _data = _data[::rdc_x, ::rdc_y, ::rdc_z]
 
-        self.data_output = torch.tensor(_data, dtype=torch.float)
+        self.data_output = torch.tensor(_data, dtype=torch.float64)
         del (_data, _data1, _data2, _data3, _data4, _data5)
 
         # for init/boundary conditions
