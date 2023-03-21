@@ -13,7 +13,7 @@ def reaction_2(u1, u2):
     return u1 - u2
 
 
-#2D reaction diffusion
+# 2D reaction diffusion
 def pde_diffusion_reaction(x, y):
 
     d1 = 1e-3
@@ -37,9 +37,6 @@ def pde_diffusion_reaction(x, y):
     return eq1 + eq2
 
 
-
-
-
 def pde_diffusion_sorption(x, y):
     D: float = 5e-4
     por: float = 0.29
@@ -59,8 +56,8 @@ def pde_diffusion_sorption(x, y):
     )
 
     return du1_t - D / retardation_factor * du1_xx
-    
-    
+
+
 def pde_swe1d():
     raise NotImplementedError
 
@@ -89,21 +86,25 @@ def pde_swe2d(x, y):
 
     return eq1 + eq2 + eq3
 
+
 def pde_adv1d(x, y, beta):
     dy_x = dde.grad.jacobian(y, x, i=0, j=0)
     dy_t = dde.grad.jacobian(y, x, i=0, j=1)
     return dy_t + beta * dy_x
+
 
 def pde_diffusion_reaction_1d(x, y, nu, rho):
     dy_t = dde.grad.jacobian(y, x, i=0, j=1)
     dy_xx = dde.grad.hessian(y, x, i=0, j=0)
     return dy_t - nu * dy_xx - rho * y * (1. - y)
 
+
 def pde_burgers1D(x, y, nu):
     dy_x = dde.grad.jacobian(y, x, i=0, j=0)
     dy_t = dde.grad.jacobian(y, x, i=0, j=1)
     dy_xx = dde.grad.hessian(y, x, i=0, j=0)
     return dy_t + y * dy_x - nu / np.pi * dy_xx
+
 
 def pde_CFD1d(x, y, gamma):
     h = y[..., 0].unsqueeze(1)  # rho
@@ -128,6 +129,7 @@ def pde_CFD1d(x, y, gamma):
     eq3 = E_t + Fx_x
 
     return eq1 + eq2 + eq3
+
 
 def pde_CFD2d(x, y, gamma):
     h = y[..., 0].unsqueeze(1)  # rho
@@ -163,6 +165,7 @@ def pde_CFD2d(x, y, gamma):
     eq4 = E_t + Fx_x + Fy_y
 
     return eq1 + eq2 + eq3 + eq4
+
 
 def pde_CFD3d(x, y, gamma):
     h = y[..., 0].unsqueeze(1)  # rho

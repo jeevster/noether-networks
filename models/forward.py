@@ -15,16 +15,18 @@ from models.cn import replace_cn_layers, load_cached_cn_modules, cache_cn_module
 from utils import svg_crit
 
 
-def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt = None):
+def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None):
     # compute embeddings for sequence
     if num_emb_frames == 1:
         embs = [fmodel(frame, mode='emb') for frame in gen_seq]
     elif num_emb_frames == 2:
-        # TODO: verify exact number of frames coming in 
+        # TODO: verify exact number of frames coming in
         stacked_gen_seq = []
         for i in range(1, len(gen_seq)):
-            stacked_gen_seq.append(torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
-        embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]  # len(embs) = len(gen_seq) - 1
+            stacked_gen_seq.append(
+                torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
+        # len(embs) = len(gen_seq) - 1
+        embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]
         if setting == 'eval':
             val_inner_lr = opt.inner_lr
             if opt.val_inner_lr != -1:
@@ -40,10 +42,10 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             if torch.is_tensor(_gen_seq):
                 _gen_seq = _gen_seq.detach().cpu().numpy()
             elif isinstance(_gen_seq, list):
-                _gen_seq = torch.stack([i.detach() for i in _gen_seq]).cpu().numpy()
+                _gen_seq = torch.stack([i.detach()
+                                       for i in _gen_seq]).cpu().numpy()
             np.save(baseline_fname, np.asarray(_gen_seq))
 
-           
             baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
             if val_inner_lr > 0 and opt.num_inner_steps > 0:
                 baseline_fname += f'-lr{val_inner_lr}'
@@ -55,16 +57,20 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
     if mode == 'mse':
         # we penalize the pairwise losses
         if compare_to == 'prev':
-            pairwise_inner_losses = torch.stack([F.mse_loss(embs[t-1], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
+            pairwise_inner_losses = torch.stack([F.mse_loss(
+                embs[t-1], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
         elif compare_to == 'zero':
-            pairwise_inner_losses = torch.stack([F.mse_loss(embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
+            pairwise_inner_losses = torch.stack([F.mse_loss(
+                embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
         elif compare_to == 'zero_and_prev':
-            pairwise_inner_losses = torch.stack([F.mse_loss(embs[t-1], embs[t], reduction='none') for t in range(1, len(embs))] + [F.mse_loss(embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
+            pairwise_inner_losses = torch.stack([F.mse_loss(embs[t-1], embs[t], reduction='none') for t in range(
+                1, len(embs))] + [F.mse_loss(embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
         else:
             raise ValueError('must choose prev or zero or zero_and_prev')
     elif mode == 'cosine':
         # cosine distance is 1 minus cosine similarity
-        pairwise_inner_losses = torch.stack([1 - F.cosine_similarity(embs[t-1], embs[t]) for t in range(1, len(embs))])
+        pairwise_inner_losses = torch.stack(
+            [1 - F.cosine_similarity(embs[t-1], embs[t]) for t in range(1, len(embs))])
     else:
         raise NotImplementedError('please use either "mse" or "cosine" mode')
     # total inner loss is just the sum of pairwise losses
@@ -74,13 +80,13 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
 def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], posterior_epses=[]):
     mus, logvars, mu_ps, logvar_ps = [], [], [], []
     if 'Basic' not in type(func_model).__name__:
-        if getattr(func_model.frame_predictor, 'init_hidden', None) is not None: 
+        if getattr(func_model.frame_predictor, 'init_hidden', None) is not None:
             func_model.frame_predictor.hidden = func_model.frame_predictor.init_hidden()
-        #func_model.posterior.hidden = func_model.posterior.init_hidden()
-        #func_model.prior.hidden = func_model.prior.init_hidden()
+        # func_model.posterior.hidden = func_model.posterior.init_hidden()
+        # func_model.prior.hidden = func_model.prior.init_hidden()
 
 #     print(f'predict_many_steps - prior_epses: {prior_epses}')
-    
+
     gen_seq = [gt_seq[0]]
 
     # skip connections for this prediction sequence: always take the latest GT one
@@ -95,7 +101,8 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
             # x_in = gen_seq[-1].clone().detach()
             # this one seems to work, but is super hacky
             if hasattr(opt, 'stop_grad') and opt.stop_grad:
-                x_in = torch.tensor(gen_seq[-1].clone().detach().cpu().numpy()).cuda()
+                x_in = torch.tensor(
+                    gen_seq[-1].clone().detach().cpu().numpy()).cuda()
             else:
                 # and this one doesn't do stop grad at all
                 x_in = gen_seq[-1]
@@ -116,7 +123,7 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
 #         else:
 #             print('sampling eps')
 
-        #predict
+        # predict
         x_hat, mu, logvar, mu_p, logvar_p, skip = func_model(
             x_in,
             gt, skip, opt,
@@ -125,14 +132,12 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
             posterior_eps=posterior_eps,
         )
 #         print(f'prior_eps[0,0] after func_model:  {prior_eps[0][0,0]}')
-        
-        
-        if not (i-1 < len(prior_epses) and i-1 < len(posterior_epses)):
-#            print('appending to lstm_eps')
-            #prior_epses.append([prior_eps[0].detach()])
-            #posterior_epses.append([posterior_eps[0].detach()])
-            pass
 
+        if not (i-1 < len(prior_epses) and i-1 < len(posterior_epses)):
+            #            print('appending to lstm_eps')
+            # prior_epses.append([prior_eps[0].detach()])
+            # posterior_epses.append([posterior_eps[0].detach()])
+            pass
 
         if i < opt.n_past:
             gen_seq.append(gt_seq[i])
@@ -147,7 +152,6 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     return gen_seq, mus, logvars, mu_ps, logvar_ps
 
 
-
 def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', **kwargs):
     '''
     Perform a round of tailoring.
@@ -159,7 +163,7 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
     replace_cn_layers(svg_model.encoder)
     replace_cn_layers(svg_model.decoder)
     if 'load_cached_cn' in kwargs and kwargs['load_cached_cn'] and \
-                            'cached_cn' in kwargs and kwargs['cached_cn'][0] is not None:
+            'cached_cn' in kwargs and kwargs['cached_cn'][0] is not None:
         load_cached_cn_modules(svg_model, kwargs['cached_cn'][0])
     # TODO: investigate the effect of not replacing these after jump step zero
     # _cn_beta = list(filter(lambda p: 'beta' in p[0], svg_model.decoder.named_parameters()))
@@ -167,23 +171,24 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
 
     cn_module_params = list(svg_model.decoder.named_parameters())
     if not 'only_cn_decoder' in kwargs or not kwargs['only_cn_decoder']:
-         cn_module_params += list(svg_model.encoder.named_parameters())
-    cn_params = [p[1] for p in cn_module_params if ('gamma' in p[0] or 'beta' in p[0])]
+        cn_module_params += list(svg_model.encoder.named_parameters())
+    cn_params = [p[1] for p in cn_module_params if (
+        'gamma' in p[0] or 'beta' in p[0])]
 
     if 'Basic' in type(svg_model).__name__:
-        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters())
+        cn_params = list(svg_model.encoder.parameters()) + \
+            list(svg_model.decoder.parameters())
 
     elif opt.inner_opt_all_model_weights:
         # TODO: try with ALL modules, not just enc and dec
         cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters()) \
-                    + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
-                       list(svg_model.frame_predictor.parameters())
+            + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
+            list(svg_model.frame_predictor.parameters())
 
     inner_lr = opt.inner_lr
     if 'val_inner_lr' in kwargs:
         inner_lr = kwargs['val_inner_lr']
-        
-    
+
     if not hasattr(opt, 'inner_crit_compare_to'):
         opt.inner_crit_compare_to = 'prev'
 
@@ -201,7 +206,7 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
     psnrs = []
     mses = []
     epsilons = []
-    
+
     orig_gen_seq = None
     orig_tailor_loss = None
 
@@ -211,57 +216,57 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
         track_higher_grads=track_higher_grads,
         copy_initial_weights=False
         # copy_initial_weights=True  # grads are zero if we copy initial weights!!
-        ) as (fmodel, diffopt):
+    ) as (fmodel, diffopt):
         prior_epses = []
         posterior_epses = []
-    
+
         # TODO: set requires_grad=False for the outer params
         if opt.tailor:
             for inner_step in range(opt.num_inner_steps):
                 if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
-                    #print('not re-use lstm eps')
+                    # print('not re-use lstm eps')
                     prior_epses = []
                     posterior_epses = []
                 # inner step: make a prediction, compute inner loss, backprop wrt inner loss
-                
-                #print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
 
-                #autoregressive rollout
+                # print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
+
+                # autoregressive rollout
                 gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
-                                                                            prior_epses=prior_epses,
-                                                                            posterior_epses=posterior_epses,
-                                                                            )
-                #compute Noether loss
+                                                                             prior_epses=prior_epses,
+                                                                             posterior_epses=posterior_epses,
+                                                                             )
+                # compute Noether loss
                 tailor_loss = inner_crit(fmodel, gen_seq, mode=inner_crit_mode,
-                                        num_emb_frames=opt.num_emb_frames,
-                                        compare_to=opt.inner_crit_compare_to, setting=mode, opt = opt)
-                
+                                         num_emb_frames=opt.num_emb_frames,
+                                         compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
+
                 if inner_step == 0:
                     # print('writing orig_gen_seq and orig_tailor_loss')
                     orig_gen_seq = [f.detach() for f in gen_seq]
                     orig_tailor_loss = tailor_loss.detach()
-                
 
                 loss = tailor_loss.mean()
 
-                #don't do this (as of now)
+                # don't do this (as of now)
                 if opt.learn_inner_lr:
                     # we optionally meta-learn the inner learning rate (log scale)
                     loss *= torch.exp(list(filter(lambda x: x.size() == torch.Size([]),
-                                                [param for param in svg_model.parameters()]))[0])
-                
-                #gradient tailoring step on Noether loss
+                                                  [param for param in svg_model.parameters()]))[0])
+
+                # gradient tailoring step on Noether loss
                 diffopt.step(loss)
-                
+
                 # cache CN params
                 if 'cached_cn' in kwargs:
                     kwargs['cached_cn'][0] = cache_cn_modules(fmodel)
-                
+
                 # TODO: test outer opt pass in inner loop
 
-                #don't do this as of now
+                # don't do this as of now
                 if 'svg_crit' in kwargs:
-                    outer_loss = kwargs['svg_crit'](gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).mean()
+                    outer_loss = kwargs['svg_crit'](
+                        gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).mean()
                     # print(f'outer_loss in inner loop: {outer_loss}')
                     outer_loss.backward()
 
@@ -272,12 +277,13 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
                 if 'tailor_ssims' in kwargs:
                     # compute SSIM for gen_seq batch
                     mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
-                                                    [f.detach() for f in gen_seq[opt.n_past:]])
+                                                     [f.detach() for f in gen_seq[opt.n_past:]])
                     ssims.append(ssim)
                     psnrs.append(psnr)
                     mses.append(mse)
-    
-                svg_loss = svg_crit(gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+
+                svg_loss = svg_crit(gen_seq, x, mus, logvars,
+                                    mu_ps, logvar_ps, opt).detach().cpu().item()
                 svg_losses.append(svg_loss)
 
         # # TODO: remove next two lines
@@ -293,16 +299,17 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
         final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
                                                                            prior_epses=prior_epses,
                                                                            posterior_epses=posterior_epses,
-                                                                          )
+                                                                           )
 
         # track metrics
         if opt.tailor:
             tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
-                                    num_emb_frames=opt.num_emb_frames,
-                                    compare_to=opt.inner_crit_compare_to).detach()
+                                     num_emb_frames=opt.num_emb_frames,
+                                     compare_to=opt.inner_crit_compare_to).detach()
             tailor_losses.append(tailor_loss.mean().cpu().item())
 
-        svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+        svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
+                            mu_ps, logvar_ps, opt).detach().cpu().item()
         svg_losses.append(svg_loss)
 
         if 'tailor_ssims' in kwargs:
@@ -314,28 +321,29 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             mses.append(mse)
         # I think this isn't actually being run but need to double check TODO
         if opt.only_tailor_on_improvement and orig_gen_seq is not None and orig_tailor_loss is not None and opt.tailor:
-            
-#             print(f'orig_tailor_loss > tailor_loss: {orig_tailor_loss > tailor_loss}')
-            
+
+            #             print(f'orig_tailor_loss > tailor_loss: {orig_tailor_loss > tailor_loss}')
+
             # per-batch basis
-#             final_gen_seq = orig_gen_seq
+            #             final_gen_seq = orig_gen_seq
             # per-sequence basis
-#             print(f'fin.shape: {final_gen_seq[0].shape}')
+            #             print(f'fin.shape: {final_gen_seq[0].shape}')
             mask = (orig_tailor_loss > tailor_loss).detach().view(-1, 1, 1, 1)
-            print(f'percent of sequences in batch improved by tailoring: {mask.float().mean()}')
+            print(
+                f'percent of sequences in batch improved by tailoring: {mask.float().mean()}')
 #             print(f'mask shape: {mask.shape}')
 
             final_gen_seq = [torch.where(mask, fin, orig)
                              for fin, orig in zip(final_gen_seq, orig_gen_seq)]
 
-            svg_loss = svg_crit(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).detach().cpu().item()
+            svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
+                                mu_ps, logvar_ps, opt).detach().cpu().item()
             svg_losses.append(svg_loss)
-            
+
             tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
                                      compare_to=opt.inner_crit_compare_to).detach()
             tailor_losses.append(tailor_loss.mean().detach().cpu().item())
-
 
             if 'tailor_ssims' in kwargs:
                 # compute SSIM for gen_seq batch

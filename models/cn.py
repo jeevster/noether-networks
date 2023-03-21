@@ -2,10 +2,12 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 
+
 class CNLayer(nn.Module):
     """
     nn.Module wrapper implementing conditional normalization layer
     """
+
     def __init__(self, shape):
         super(CNLayer, self).__init__()
         assert len(shape) == 4, "CN layer must have 2-dimensional shape"
@@ -37,18 +39,19 @@ def replace_cn_layers(model, batch_size=None):
     for module in model.modules():
         if 'CNLayer' in type(module).__name__:
             if batch_size is not None:
-                module.reinitialize_params(new_shape=(batch_size,) + module.shape[1:])
+                module.reinitialize_params(
+                    new_shape=(batch_size,) + module.shape[1:])
             else:
                 module.reinitialize_params()
-                
-                
+
+
 def cache_cn_modules(model):
     copied_modules = {}
     with torch.no_grad():
         for name, param in model.named_parameters():
             if 'gamma' in name or 'beta' in name:
                 copied_modules[name] = param.detach().clone()
-            
+
         # copy modules not named params:
 #         for idx, module in enumerate(model.modules()):
 #             if 'CNLayer' in type(module).__name__:
@@ -65,7 +68,7 @@ def load_cached_cn_modules(model, cached_modules):
             if name in cached_modules:
                 param.copy_(cached_modules[name])
         model.cuda()
-        
+
 #         for idx, module in enumerate(model.modules()):
 #             if 'CNLayer' in type(module).__name__:
 #                 module.gamma.copy_(cached_modules[idx]['gamma'])

@@ -1,3 +1,16 @@
+import imageio
+from torch.autograd import Variable
+from torchvision import datasets, transforms
+from models.svg import SVGModel
+from models.cn import replace_cn_layers, CNLayer
+from torch import nn
+from PIL import Image, ImageDraw
+from scipy import ndimage
+from scipy import signal
+from torchmetrics.functional import peak_signal_noise_ratio as psnr_metric
+from torchmetrics.functional import structural_similarity_index_measure as ssim_metric
+import functools
+import matplotlib.pyplot as plt
 import math
 import torch
 import socket
@@ -8,17 +21,6 @@ from sklearn.manifold import TSNE
 import scipy.misc
 import matplotlib
 matplotlib.use('agg')
-import matplotlib.pyplot as plt
-import functools
-from torchmetrics.functional import structural_similarity_index_measure as ssim_metric
-from torchmetrics.functional import peak_signal_noise_ratio as psnr_metric
-from scipy import signal
-from scipy import ndimage
-from PIL import Image, ImageDraw
-import torch
-from torch import nn
-from models.cn import replace_cn_layers, CNLayer
-from models.svg import SVGModel
 
 try:
     from models.embedding import ConservedEmbedding
@@ -26,17 +28,11 @@ except:
     pass
 
 
-
-
-from torchvision import datasets, transforms
-from torch.autograd import Variable
-import imageio
-
-
 hostname = socket.gethostname()
 
 
 svg_mse_crit = nn.MSELoss()
+
 
 def pad_zeros(tensor, target_size):
     # Get the current size of the tensor
@@ -47,26 +43,31 @@ def pad_zeros(tensor, target_size):
     width_pad = (target_size - width) // 2
 
     # Pad the tensor with zeros along each axis
-    padded = nn.functional.pad(tensor, (width_pad, width_pad, height_pad, height_pad), mode='constant', value=0)
+    padded = nn.functional.pad(
+        tensor, (width_pad, width_pad, height_pad, height_pad), mode='constant', value=0)
 
     return padded
+
 
 def svg_kl_crit(mu1, logvar1, mu2, logvar2, opt):
     # KL( N(mu_1, sigma2_1) || N(mu_2, sigma2_2))
     sigma1 = logvar1.mul(0.5).exp()
     sigma2 = logvar2.mul(0.5).exp()
-    kld = torch.log(sigma2/sigma1) + (torch.exp(logvar1) + (mu1 - mu2)**2)/(2*torch.exp(logvar2)) - 1/2
+    kld = torch.log(sigma2/sigma1) + (torch.exp(logvar1) +
+                                      (mu1 - mu2)**2)/(2*torch.exp(logvar2)) - 1/2
     return kld.sum() / opt.batch_size
+
 
 def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, opt):
     # svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[opt.n_past:], gt_seq[opt.n_past:]))
 
-    #MSE Loss for Task loss
-    svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
+    # MSE Loss for Task loss
+    svg_mse_losses = list(svg_mse_crit(gen, gt)
+                          for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
     svg_loss = torch.stack(svg_mse_losses).sum()
 
     # TODO: investigate effect of KL term on tailoring
-    svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p \
+    svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p
                      in zip(mus, logvars, mu_ps, logvar_ps)]
     svg_loss += opt.svg_loss_kl_weight * torch.stack(svg_kl_losses).sum()
     return svg_loss
@@ -133,24 +134,24 @@ def load_dataset(opt):
             frame_step = opt.frame_step
 
         train_data = TwoDReacDiff(
-        data_root=opt.data_root,
-        train=True,
-        image_size=opt.image_width,
-        seq_len=opt.n_eval,
-        percent_train=(opt.train_set_length/length),
-        frame_step=frame_step,
-        length=length,
+            data_root=opt.data_root,
+            train=True,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval,
+            percent_train=(opt.train_set_length/length),
+            frame_step=frame_step,
+            length=length,
         )
         test_data = TwoDReacDiff(
-        data_root=opt.data_root,
-        train=False,
-        image_size=opt.image_width,
-        seq_len=opt.n_eval,
-        percent_train=(opt.train_set_length/length),
-        frame_step=frame_step,
-        length=length,
+            data_root=opt.data_root,
+            train=False,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval,
+            percent_train=(opt.train_set_length/length),
+            frame_step=frame_step,
+            length=length,
         )
-        
+
     else:
         raise ValueError(
             'Only "phys101" and "2d_reacdiff" are supported. Other datasets are available in the original SVG repo.'
@@ -179,12 +180,14 @@ def normalize_data(opt, dtype, sequence):
         return sequence_stack_input(sequence, dtype)
     return sequence_input(sequence, dtype)
 
+
 def is_sequence(arg):
     return (not hasattr(arg, "strip") and
             not type(arg) is np.ndarray and
             not hasattr(arg, "dot") and
             (hasattr(arg, "__getitem__") or
             hasattr(arg, "__iter__")))
+
 
 def image_tensor(inputs, padding=1):
     # assert is_sequence(inputs)
@@ -207,7 +210,7 @@ def image_tensor(inputs, padding=1):
                             x_dim * len(images) + padding * (len(images)-1),
                             y_dim)
         for i, image in enumerate(images):
-            result[:, i * x_dim + i * padding :
+            result[:, i * x_dim + i * padding:
                    (i+1) * x_dim + i * padding, :].copy_(image)
 
         return result
@@ -230,9 +233,10 @@ def image_tensor(inputs, padding=1):
                             x_dim,
                             y_dim * len(images) + padding * (len(images)-1))
         for i, image in enumerate(images):
-            result[:, :, i * y_dim + i * padding :
+            result[:, :, i * y_dim + i * padding:
                    (i+1) * y_dim + i * padding].copy_(image)
         return result
+
 
 def save_np_img(fname, x):
     if x.shape[0] == 1:
@@ -242,55 +246,65 @@ def save_np_img(fname, x):
                              channel_axis=0)
     img.save(fname)
 
+
 def make_image(tensor):
     tensor = tensor.cpu().clamp(0, 1)
     if tensor.size(0) == 1:
         tensor = tensor.expand(3, tensor.size(1), tensor.size(2))
-    #import pdb
-    #pdb.set_trace()
+    # import pdb
+    # pdb.set_trace()
     return scipy.misc.toimage(tensor.detach().numpy(),
                               high=255*tensor.detach().numpy().max(),
                               channel_axis=0)
+
 
 def draw_text_tensor(tensor, text):
     np_x = tensor.transpose(0, 1).transpose(1, 2).data.cpu().numpy()
     pil = Image.fromarray(np.uint8(np_x*255))
     draw = ImageDraw.Draw(pil)
-    draw.text((4, 64), text, (0,0,0))
+    draw.text((4, 64), text, (0, 0, 0))
     img = np.asarray(pil)
     return Variable(torch.Tensor(img / 255.)).transpose(1, 2).transpose(0, 1)
+
 
 def save_gif(filename, inputs, duration=0.25):
     images = []
     for tensor in inputs:
         img = image_tensor(tensor, padding=0)
         img = img.cpu()
-        img = img.transpose(0,1).transpose(1,2).clamp(0,1)
+        img = img.transpose(0, 1).transpose(1, 2).clamp(0, 1)
         images.append(img.numpy())
     imageio.mimsave(filename, images, duration=duration)
+
 
 def save_gif_with_text(filename, inputs, text, duration=0.25):
     images = []
     for tensor, text in zip(inputs, text):
-        img = image_tensor([draw_text_tensor(ti, texti) for ti, texti in zip(tensor, text)], padding=0)
+        img = image_tensor([draw_text_tensor(ti, texti)
+                           for ti, texti in zip(tensor, text)], padding=0)
         img = img.cpu()
-        img = img.transpose(0,1).transpose(1,2).clamp(0,1).numpy()
+        img = img.transpose(0, 1).transpose(1, 2).clamp(0, 1).numpy()
         images.append(img)
     imageio.mimsave(filename, images, duration=duration)
+
 
 def save_image(filename, tensor):
     img = make_image(tensor)
     img.save(filename)
 
+
 def save_tensors_image(filename, inputs, padding=1):
     images = image_tensor(inputs, padding)
     return save_image(filename, images)
 
+
 def prod(l):
     return functools.reduce(lambda x, y: x * y, l)
 
+
 def batch_flatten(x):
     return x.resize(x.size(0), prod(x.size()[1:]))
+
 
 def clear_progressbar():
     # moves up 3 lines
@@ -300,10 +314,12 @@ def clear_progressbar():
     # moves up two lines again
     print("\033[2A")
 
+
 def mse_metric(x1, x2):
     err = ((x1 - x2) ** 2).sum()
     err /= float(x1.shape[0] * x1.shape[1] * x1.shape[2])
     return err
+
 
 def eval_seq(gt, pred):
     T = len(gt)
@@ -323,6 +339,8 @@ def eval_seq(gt, pred):
     return mse.cpu().numpy(), ssim.cpu().numpy(), psnr.cpu().numpy()
 
 # ssim function used in Babaeizadeh et al. (2017), Fin et al. (2016), etc.
+
+
 def finn_eval_seq(gt, pred):
     T = len(gt)
     bs = gt[0].shape[0]
@@ -356,10 +374,12 @@ def gaussian2(size, sigma):
     g = A*np.exp(-((x**2/(2.0*sigma**2))+(y**2/(2.0*sigma**2))))
     return g
 
+
 def fspecial_gauss(size, sigma):
     x, y = np.mgrid[-size//2 + 1:size//2 + 1, -size//2 + 1:size//2 + 1]
     g = np.exp(-((x**2 + y**2)/(2.0*sigma**2)))
     return g/g.sum()
+
 
 def finn_ssim(img1, img2, cs_map=False):
     img1 = img1.astype(np.float64)
@@ -369,7 +389,7 @@ def finn_ssim(img1, img2, cs_map=False):
     window = fspecial_gauss(size, sigma)
     K1 = 0.01
     K2 = 0.03
-    L = 1 #bitdepth of image
+    L = 1  # bitdepth of image
     C1 = (K1*L)**2
     C2 = (K2*L)**2
     mu1 = signal.fftconvolve(img1, window, mode='valid')
@@ -381,12 +401,12 @@ def finn_ssim(img1, img2, cs_map=False):
     sigma2_sq = signal.fftconvolve(img2*img2, window, mode='valid') - mu2_sq
     sigma12 = signal.fftconvolve(img1*img2, window, mode='valid') - mu1_mu2
     if cs_map:
-        return (((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1)*
-                    (sigma1_sq + sigma2_sq + C2)),
+        return (((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1) *
+                                                     (sigma1_sq + sigma2_sq + C2)),
                 (2.0*sigma12 + C2)/(sigma1_sq + sigma2_sq + C2))
     else:
-        return ((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1)*
-                    (sigma1_sq + sigma2_sq + C2))
+        return ((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1) *
+                                                    (sigma1_sq + sigma2_sq + C2))
 
 
 def init_weights(m):
@@ -409,6 +429,7 @@ def init_forget_bias_to_one(model):
             n = p.size(0)
             forget_start_idx, forget_end_idx = n // 4, n // 2
             p[forget_start_idx:forget_end_idx].data.fill_(1)
+
 
 def save_gif_IROS_2019(gif_fname, images, fps=12):
     """
@@ -458,8 +479,8 @@ def plot_batch(batch, *args, num_imgs=4):
     if False:
         plt.imshow(
             np.vstack(
-                [np.hstack([gray[i].numpy().transpose((1,2,0)).reshape(-1,64,1) for i in range(num_imgs)]),
-                np.hstack([graymean[i].numpy().transpose((1,2,0)).reshape(-1,64,1) for i in range(num_imgs)])]
+                [np.hstack([gray[i].numpy().transpose((1, 2, 0)).reshape(-1, 64, 1) for i in range(num_imgs)]),
+                 np.hstack([graymean[i].numpy().transpose((1, 2, 0)).reshape(-1, 64, 1) for i in range(num_imgs)])]
             ),
             cmap='gray'
         )
@@ -467,14 +488,16 @@ def plot_batch(batch, *args, num_imgs=4):
         plt.imshow(
             np.vstack(
                 [
-                    np.hstack([b.cpu()[i].numpy().transpose((1,2,0)) for i in range(num_imgs)]) for b in batch
+                    np.hstack([b.cpu()[i].numpy().transpose((1, 2, 0)) for i in range(num_imgs)]) for b in batch
                 ]
             )
         )
     else:
         plt.imshow(
-            np.hstack([batch.cpu()[i].numpy().transpose((1,2,0)) for i in range(num_imgs)])
+            np.hstack([batch.cpu()[i].numpy().transpose((1, 2, 0))
+                      for i in range(num_imgs)])
         )
+
 
 def load_base_weights(model, base_state_dict):
     '''
@@ -482,7 +505,8 @@ def load_base_weights(model, base_state_dict):
         Note: CN layers are not modified (likely will be ones and zeros).
     '''
     model_dict = model.state_dict()
-    base_params = {k: v for k, v in base_state_dict.items() if k in model_dict and 'gamma' not in k and 'beta' not in k}
+    base_params = {k: v for k, v in base_state_dict.items(
+    ) if k in model_dict and 'gamma' not in k and 'beta' not in k}
     model_dict.update(base_params)
     model.load_state_dict(model_dict)
 
@@ -536,7 +560,9 @@ def batch_norm_to_group_norm(layer):
                 if isinstance(sub_layer, torch.nn.BatchNorm2d):
                     num_channels = sub_layer.num_features
                     # first level of current layer or model contains a batch norm --> replacing.
-                    layer._modules[name] = nn.GroupNorm(1, sub_layer.num_features)  # TODO: logic for multiple groups
+                    # TODO: logic for multiple groups
+                    layer._modules[name] = nn.GroupNorm(
+                        1, sub_layer.num_features)
             except AttributeError:
                 # go deeper: set name to layer1, getattr will return layer1 --> call this func again
                 name = name.split('.')[0]
@@ -575,10 +601,12 @@ def modernize_model(old_model_path, opt):
     posterior.eval()
 
     # Encoder and decoder have CN layers and the weights of the `opt.model_path` model
-    encoder = model.encoder(tmp['encoder'].dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
+    encoder = model.encoder(
+        tmp['encoder'].dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
     load_base_weights(encoder, tmp['encoder'].state_dict())
 
-    decoder = model.decoder(tmp['decoder'].dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
+    decoder = model.decoder(
+        tmp['decoder'].dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
     load_base_weights(decoder, tmp['decoder'].state_dict())
 
     replace_cn_layers(encoder, batch_size=opt.batch_size)
@@ -600,7 +628,8 @@ def modernize_model(old_model_path, opt):
             module.align_corners = None
         if isinstance(module, torch.nn.BatchNorm2d):
             module.track_running_stats = True
-            module.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
+            module.register_buffer('num_batches_tracked',
+                                   torch.tensor(0, dtype=torch.long))
         else:
             for i, (name, module1) in enumerate(module._modules.items()):
                 module1 = recursion_change_bn(module1)
