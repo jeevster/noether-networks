@@ -110,12 +110,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
 
         # param is either a newtwork or a callable constant
         if learned:
-            self.k = ParameterNet(
-                in_size, in_channels*n_frames, hidden_channels, n_layers)
-            self.Du = ParameterNet(
-                in_size, in_channels*n_frames, hidden_channels, n_layers)
-            self.Dv = ParameterNet(
-                in_size, in_channels*n_frames, hidden_channels, n_layers)
+            self.paramnet = ParameterNet(in_size, in_channels*n_frames, hidden_channels, n_layers)
         else:
             self.k = ConstantLayer(5e-3)
             self.Du = ConstantLayer(1e-3)
@@ -134,10 +129,10 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # self.dyy_op = self.dxx_op.T * (self.dx/self.dy)**3
         # self.dt_op = torch.Tensor([-3, 4, -1]).unsqueeze(-1).unsqueeze(-1) / (2*self.dt)
 
-    def reaction_1(self, solution_field):
+    def reaction_1(self, solution_field, k):
         u = solution_field[:, -1, 0]
         v = solution_field[:, -1, 1]
-        return u - (u * u * u) - self.k(solution_field).unsqueeze(-1) - v
+        return u - (u * u * u) - k.unsqueeze(-1) - v
 
     def reaction_2(self, solution_field):
         u = solution_field[:, -1, 0]
@@ -146,7 +141,6 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
 
     # 2D reaction diffusion
     def forward(self, solution_field):
-
         solution_field = solution_field.reshape(solution_field.shape[0],
                                                 int(solution_field.shape[1] /
                                                     self.in_channels), self.in_channels,
@@ -178,13 +172,14 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # compute time derivatives on stack of frames (use 1st order backward difference scheme)
         du_t = (last_u - u_stack[:, -2]) / self.dt
         dv_t = (last_v - v_stack[:, -2]) / self.dt
-
+        params = self.paramnet(solution_field)
+        k = params[:, 0]
+        d1 = params[:, 1]
+        d2 = params[:,2]
         # du_dt = Du*du_dxx + Du*du_dyy + Ru
-        eq1 = du_t - self.reaction_1(solution_field) - self.Du(
-            solution_field).unsqueeze(-1) * (du_xx + du_yy)
+        eq1 = du_t - self.reaction_1(solution_field, k=k) - d1.unsqueeze(-1) * (du_xx + du_yy)
         # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
-        eq2 = dv_t - self.reaction_2(solution_field) - self.Dv(
-            solution_field).unsqueeze(-1) * (dv_xx + dv_yy)
+        eq2 = dv_t - self.reaction_2(solution_field) - d2.unsqueeze(-1) * (dv_xx + dv_yy)
 
         return (eq1 + eq2)[:, 2:-2, 2:-2]
 
@@ -210,7 +205,7 @@ class ParameterNet(nn.Module):
                                   )
 
         self.mlp = nn.Linear(
-            hidden_channels*int(in_size/8 + 1)*int(in_size/8 + 1), 1)
+            hidden_channels*int(in_size/8 + 1)*int(in_size/8 + 1), 3)
 
     def forward(self, x):
         if len(x.shape) == 5:
