@@ -90,14 +90,15 @@ class EncoderEmbedding(nn.Module):
 class ConstantLayer(nn.Module):
     '''layer that returns a constant value (batched)'''
 
-    def __init__(self, constant) -> None:
+    def __init__(self, *constants) -> None:
         super().__init__()
-        self.const_tensor = torch.Tensor([constant]).cuda().double()
+        self.num_constants = len(constants)
+        self.const_tensor = torch.Tensor(constants).cuda().double()
         self.const_tensor.requires_grad = False
 
     def forward(self, x):
         b_size = x.shape[0]
-        return self.const_tensor.expand(b_size, -1)
+        return self.const_tensor.expand(b_size, self.num_constants)
 
 
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
@@ -110,11 +111,10 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
 
         # param is either a newtwork or a callable constant
         if learned:
-            self.paramnet = ParameterNet(in_size, in_channels*n_frames, hidden_channels, n_layers)
+            self.paramnet = ParameterNet(
+                in_size, in_channels*n_frames, hidden_channels, n_layers)
         else:
-            self.k = ConstantLayer(5e-3)
-            self.Du = ConstantLayer(1e-3)
-            self.Dv = ConstantLayer(5e-3)
+            self.paramnet = ConstantLayer(5e-3, 1e-3, 5e-3)
         # initialize grid for finite differences
         file = h5py.File(join(data_root, "2D_diff-react_NA_NA.h5"))
         x = torch.Tensor(file['0001']['grid']['x'][:])
@@ -172,14 +172,18 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # compute time derivatives on stack of frames (use 1st order backward difference scheme)
         du_t = (last_u - u_stack[:, -2]) / self.dt
         dv_t = (last_v - v_stack[:, -2]) / self.dt
+
         params = self.paramnet(solution_field)
         k = params[:, 0]
-        d1 = params[:, 1]
-        d2 = params[:,2]
+        Du = params[:, 1]
+        Dv = params[:, 2]
+
         # du_dt = Du*du_dxx + Du*du_dyy + Ru
-        eq1 = du_t - self.reaction_1(solution_field, k=k) - d1.unsqueeze(-1) * (du_xx + du_yy)
+        eq1 = du_t - self.reaction_1(solution_field,
+                                     k=k) - Du.unsqueeze(-1) * (du_xx + du_yy)
         # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
-        eq2 = dv_t - self.reaction_2(solution_field) - d2.unsqueeze(-1) * (dv_xx + dv_yy)
+        eq2 = dv_t - self.reaction_2(solution_field) - \
+            Dv.unsqueeze(-1) * (dv_xx + dv_yy)
 
         return (eq1 + eq2)[:, 2:-2, 2:-2]
 
