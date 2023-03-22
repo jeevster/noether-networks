@@ -132,7 +132,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
     def reaction_1(self, solution_field, k):
         u = solution_field[:, -1, 0]
         v = solution_field[:, -1, 1]
-        return u - (u * u * u) - k.unsqueeze(-1) - v
+        return u - (u * u * u) - k - v
 
     def reaction_2(self, solution_field):
         u = solution_field[:, -1, 0]
@@ -174,16 +174,16 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         dv_t = (last_v - v_stack[:, -2]) / self.dt
 
         params = self.paramnet(solution_field)
-        k = params[:, 0]
-        Du = params[:, 1]
-        Dv = params[:, 2]
+        k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
+        Du = params[:, 1].unsqueeze(-1).unsqueeze(-1)
+        Dv = params[:, 2].unsqueeze(-1).unsqueeze(-1)
 
         # du_dt = Du*du_dxx + Du*du_dyy + Ru
         eq1 = du_t - self.reaction_1(solution_field,
-                                     k=k) - Du.unsqueeze(-1) * (du_xx + du_yy)
+                                     k=k) - Du * (du_xx + du_yy)
         # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
         eq2 = dv_t - self.reaction_2(solution_field) - \
-            Dv.unsqueeze(-1) * (dv_xx + dv_yy)
+            Dv* (dv_xx + dv_yy)
 
         return (eq1 + eq2)[:, 2:-2, 2:-2]
 
@@ -192,30 +192,26 @@ class ParameterNet(nn.Module):
     def __init__(self, in_size, in_channels, hidden_channels, n_layers):
         super(ParameterNet, self).__init__()
 
-        self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
-                               in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
+        # self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
+        #                        in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
 
-        self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
+        self.conv = nn.Sequential(Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
-                                  nn.MaxPool2d(2),
+                                  nn.MaxPool2d(4),
                                   Conv2d(hidden_channels, hidden_channels,
                                          kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
-                                  nn.MaxPool2d(2),
-                                  Conv2d(hidden_channels, hidden_channels,
-                                         kernel_size=3, stride=1, padding=(2, 2)),
-                                  nn.ReLU(),
-                                  nn.MaxPool2d(2)
+                                  nn.MaxPool2d(4),
                                   )
 
         self.mlp = nn.Linear(
-            hidden_channels*int(in_size/8 + 1)*int(in_size/8 + 1), 3)
+            hidden_channels*int(in_size/16)*int(in_size/16), 3)
 
     def forward(self, x):
         if len(x.shape) == 5:
             x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
-        x = self.fno_encoder(x)
+        #x = self.fno_encoder(x)
         x = self.conv(x)
         x = torch.flatten(x, start_dim=1)
         return self.mlp(x)
