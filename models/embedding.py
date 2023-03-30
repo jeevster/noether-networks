@@ -150,7 +150,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
 
-        # compute spatial derivatives only on most recent frame (use 2nd order central difference scheme)
+        # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
         last_u = u_stack[:, -1]
         last_v = v_stack[:, -1]
         du_xx = (-1*last_u[:, 0:-4, 2:-2] + 16*last_u[:, 1:-3, 2:-2] - 30*last_u[:, 2:-2,
@@ -173,6 +173,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         du_t = (last_u - u_stack[:, -2]) / self.dt
         dv_t = (last_v - v_stack[:, -2]) / self.dt
 
+        #predict params - all with the same network
         params = self.paramnet(solution_field)
         k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
         Du = params[:, 1].unsqueeze(-1).unsqueeze(-1)

@@ -340,7 +340,7 @@ for trial_num in range(opt.num_trials):
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
         # dynamics model
         frame_predictor = FNO(n_modes=(opt.fno_modes, opt.fno_modes), hidden_channels=opt.fno_width,
-                              in_channels=opt.channels, out_channels=opt.channels, n_layers=opt.fno_layers)
+                              in_channels=opt.channels*opt.n_past, out_channels=opt.channels, n_layers=opt.fno_layers)
         # frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
 
         posterior = nn.Identity()
@@ -442,15 +442,15 @@ for trial_num in range(opt.num_trials):
             print(f'embedding ckpt path given but no embedding found...')
 
     svg_model.apply(lambda t: t.cuda())
-    print('Eval summary')
-    summary(svg_model.frame_predictor, input_size=(opt.n_past, opt.channels, opt.image_width,
-            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"),  mode='eval')
-    print('Train summary')
-    summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width,
-            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
-    print('Emb summary')
-    #summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
-    summary(svg_model.emb, input_size=(opt.n_future, opt.n_past * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
+    # print('Eval summary')
+    # summary(svg_model.frame_predictor, input_size=(opt.n_past, opt.channels, opt.image_width,
+    #         opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"),  mode='eval')
+    # print('Train summary')
+    # summary(svg_model, input_size=(opt.n_past, opt.channels, opt.image_width,
+    #         opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
+    # print('Emb summary')
+    # #summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
+    # summary(svg_model.emb, input_size=(opt.n_future, opt.n_past * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())
     if opt.baseline:

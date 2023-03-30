@@ -25,8 +25,9 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
         for i in range(1, len(gen_seq)):
             stacked_gen_seq.append(
                 torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
-        # len(embs) = len(gen_seq) - 1
         embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]
+        
+        assert(len(embs) == len(gen_seq) - 1)
         if setting == 'eval':
             val_inner_lr = opt.inner_lr
             if opt.val_inner_lr != -1:
@@ -67,7 +68,8 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
                 1, len(embs))] + [F.mse_loss(embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
         elif compare_to == 'pde_zero':
             pairwise_inner_losses = torch.stack(
-                [torch.linalg.norm(emb) for emb in embs])
+                [torch.square(emb).mean() for emb in embs])
+            import pdb; pdb.set_trace()
             # pairwise_inner_losses = torch.stack(
             #     [pairwise_inner_losses[t-1] for t in range(1, len(embs))])
         else:
@@ -92,13 +94,14 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
 
 #     print(f'predict_many_steps - prior_epses: {prior_epses}')
 
-    gen_seq = [gt_seq[0]]
+    #initial condition - condition on n_past frames
+    gen_seq = gt_seq[0:opt.n_past]
 
     # skip connections for this prediction sequence: always take the latest GT one
     #     (after opt.n_past time steps, this will be the last GT frame)
     skip = [None]
 
-    for i in range(1, int(opt.n_eval/opt.frame_step)):
+    for i in range(opt.n_past, int(opt.n_eval/opt.frame_step)):
         # TODO: different mode for training, where we get frames for more than just conditioning?
         if mode == 'eval':
             gt = None if i >= opt.n_eval else gt_seq[i]
@@ -110,14 +113,18 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
                     gen_seq[-1].clone().detach().cpu().numpy()).cuda()
             else:
                 # and this one doesn't do stop grad at all
-                x_in = gen_seq[-1]
+                #condition on last n_past generated frames
+                x_in = torch.cat(gen_seq[-opt.n_past:], dim =1)
+
         elif mode == 'train':
             gt = gt_seq[i]
-            x_in = gt_seq[i-1]
+            #condition on last n_past ground truth frames (teacher forcing)
+            x_in = torch.cat(gt_seq[(i-opt.n_past):i], dim = 1)
         else:
             raise NotImplementedError
 #         gt = None if i >= opt.n_past else gt_seq[i]
 
+        
         prior_eps = [None]
         posterior_eps = [None]
 #         print(f"i: {i}")
@@ -143,7 +150,8 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
             # prior_epses.append([prior_eps[0].detach()])
             # posterior_epses.append([posterior_eps[0].detach()])
             pass
-
+            
+        #shouldn't get executed anymore because of loop boundaries
         if i < opt.n_past:
             gen_seq.append(gt_seq[i])
         else:
