@@ -69,7 +69,6 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
         elif compare_to == 'pde_zero':
             pairwise_inner_losses = torch.stack(
                 [torch.square(emb).mean() for emb in embs])
-            import pdb; pdb.set_trace()
             # pairwise_inner_losses = torch.stack(
             #     [pairwise_inner_losses[t-1] for t in range(1, len(embs))])
         else:
