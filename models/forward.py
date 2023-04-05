@@ -72,7 +72,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
             # pairwise_inner_losses = torch.stack(
             #     [pairwise_inner_losses[t-1] for t in range(1, len(embs))])
         else:
-            raise ValueError('must choose prev or zero or zero_and_prev')
+            raise ValueError('must choose prev or zero or zero_and_prev or pde_zero')
     elif mode == 'cosine':
         # cosine distance is 1 minus cosine similarity
         pairwise_inner_losses = torch.stack(

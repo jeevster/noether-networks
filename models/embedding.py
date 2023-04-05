@@ -116,7 +116,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         else:
             self.paramnet = ConstantLayer(5e-3, 1e-3, 5e-3)
         # initialize grid for finite differences
-        file = h5py.File(join(data_root, "2D_diff-react_NA_NA.h5"))
+        file = h5py.File(join(data_root, "2D_diff-react_Du=0.01704641_Dv=0.0154535_k=0.009386063.h5"))
         x = torch.Tensor(file['0001']['grid']['x'][:])
         y = torch.Tensor(file['0001']['grid']['y'][:])
         t = torch.Tensor(file['0001']['grid']['t'][:])
@@ -140,7 +140,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         return u - v
 
     # 2D reaction diffusion
-    def forward(self, solution_field):
+    def forward(self, solution_field, return_params = False):
         solution_field = solution_field.reshape(solution_field.shape[0],
                                                 int(solution_field.shape[1] /
                                                     self.in_channels), self.in_channels,
@@ -185,8 +185,10 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
         eq2 = dv_t - self.reaction_2(solution_field) - \
             Dv* (dv_xx + dv_yy)
-
-        return (eq1 + eq2)[:, 2:-2, 2:-2]
+        if return_params:
+            return (eq1 + eq2)[:, 2:-2, 2:-2], (Du, Dv, k)
+        else:
+            return (eq1 + eq2)[:, 2:-2, 2:-2]
 
 
 class ParameterNet(nn.Module):
