@@ -140,7 +140,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         return u - v
 
     # 2D reaction diffusion
-    def forward(self, solution_field, return_params = False):
+    def forward(self, solution_field, true_params = None, return_params = False):
         solution_field = solution_field.reshape(solution_field.shape[0],
                                                 int(solution_field.shape[1] /
                                                     self.in_channels), self.in_channels,
@@ -175,6 +175,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
 
         #predict params - all with the same network
         params = self.paramnet(solution_field)
+    
         k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
         Du = params[:, 1].unsqueeze(-1).unsqueeze(-1)
         Dv = params[:, 2].unsqueeze(-1).unsqueeze(-1)
@@ -185,20 +186,36 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
         eq2 = dv_t - self.reaction_2(solution_field) - \
             Dv* (dv_xx + dv_yy)
+
+        
+        if true_params is not None:
+            k_true, Du_true, Dv_true = true_params
+            eq1_true = du_t - self.reaction_1(solution_field,
+                                     k=k_true.unsqueeze(-1).unsqueeze(-1)) - Du_true.unsqueeze(-1).unsqueeze(-1) * (du_xx + du_yy)
+            
+            eq2_true = dv_t - self.reaction_2(solution_field) - \
+                        Dv_true.unsqueeze(-1).unsqueeze(-1)* (dv_xx + dv_yy)
+            
         if return_params:
-            return (eq1 + eq2)[:, 2:-2, 2:-2], (Du, Dv, k)
+            if true_params is not None:
+                return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2], (k, Du, Dv)
+            else:
+                return (eq1 + eq2)[:, 2:-2, 2:-2], (k, Du, Dv)
         else:
-            return (eq1 + eq2)[:, 2:-2, 2:-2]
+            if true_params is not None:
+                return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2]
+            else:
+                return (eq1 + eq2)[:, 2:-2, 2:-2]
 
 
 class ParameterNet(nn.Module):
     def __init__(self, in_size, in_channels, hidden_channels, n_layers):
         super(ParameterNet, self).__init__()
 
-        # self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
-        #                        in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
+        self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
+                               in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
 
-        self.conv = nn.Sequential(Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
+        self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
                                   nn.MaxPool2d(4),
                                   Conv2d(hidden_channels, hidden_channels,
@@ -214,7 +231,7 @@ class ParameterNet(nn.Module):
         if len(x.shape) == 5:
             x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
-        #x = self.fno_encoder(x)
+        x = self.fno_encoder(x)
         x = self.conv(x)
         x = torch.flatten(x, start_dim=1)
         return self.mlp(x)

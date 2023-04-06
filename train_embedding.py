@@ -351,7 +351,9 @@ for p in embedding.named_parameters():
 
 print(f'starting at epoch 0')
 train_losses = []
+train_true_losses = []
 val_losses = []
+val_true_losses = []
 train_du_losses = []
 train_dv_losses = []
 train_k_losses = []
@@ -368,6 +370,7 @@ for epoch in range(0, opt.n_epochs):
     if epoch % opt.num_epochs_per_val == 0:
         print(f'Validation {epoch} Epoch')
         val_loss = 0.
+        val_true_loss = 0
         val_du_loss = 0
         val_dv_loss = 0
         val_k_loss= 0
@@ -376,11 +379,12 @@ for epoch in range(0, opt.n_epochs):
         with torch.no_grad():
             for batch_num in tqdm(range(opt.num_val_batch)):
                 data, params = next(testing_batch_generator)
-                
-                pde_value, pred_params = embedding(data, return_params = True)
+                params = tuple([param.to(torch.device("cuda")) for param in params])
+                pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
                 val_loss += torch.square(pde_value).mean()
-                du_pred, dv_pred, k_pred = pred_params
-                du, dv, k = params
+                val_true_loss += torch.square(true_pde_value).mean()
+                k_pred, du_pred, dv_pred = pred_params
+                k, du, dv = params
                 du = du.to(torch.device("cuda"))
                 dv = du.to(torch.device("cuda"))
                 k = du.to(torch.device("cuda"))
@@ -389,6 +393,7 @@ for epoch in range(0, opt.n_epochs):
                 val_k_loss += ((k_pred - k).abs() / k).mean()
             
             val_losses.append(val_loss / opt.num_val_batch)
+            val_true_losses.append(val_true_loss / opt.num_val_batch)
             val_du_losses.append(val_du_loss / opt.num_val_batch)
             val_dv_losses.append(val_dv_loss / opt.num_val_batch)
             val_k_losses.append(val_k_loss / opt.num_val_batch)
@@ -397,6 +402,7 @@ for epoch in range(0, opt.n_epochs):
     # Training
     print(f'Train {epoch} Epoch')
     train_loss = 0.
+    train_true_loss = 0
     train_du_loss = 0
     train_dv_loss = 0
     train_k_loss= 0
@@ -404,17 +410,20 @@ for epoch in range(0, opt.n_epochs):
     for batch_num in tqdm(range(opt.num_train_batch)):
         
         data, params = next(testing_batch_generator)
-        pde_value, pred_params = embedding(data, return_params = True)
+        params = tuple([param.to(torch.device("cuda")) for param in params])
+        pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
 
         optimizer.zero_grad()
         loss = (pde_value).square().mean()
+        true_loss = (true_pde_value).square().mean()
         loss.backward()
         optimizer.step()
         #scheduler.step(loss)
         train_loss+=loss
+        train_true_loss +=true_loss
         
-        du_pred, dv_pred, k_pred = pred_params
-        du, dv, k = params
+        k_pred, du_pred, dv_pred = pred_params
+        k, du, dv = params
         du = du.to(torch.device("cuda"))
         dv = du.to(torch.device("cuda"))
         k = du.to(torch.device("cuda"))
@@ -423,17 +432,20 @@ for epoch in range(0, opt.n_epochs):
         train_k_loss += ((k_pred - k).abs() / k).mean()
     
     train_losses.append(train_loss / opt.num_train_batch)
+    train_true_losses.append(train_true_loss / opt.num_train_batch)
     train_du_losses.append(train_du_loss / opt.num_train_batch)
     train_dv_losses.append(train_dv_loss / opt.num_train_batch)
     train_k_losses.append(train_k_loss / opt.num_train_batch)
     print("Train PDE Loss: ", train_loss / opt.num_train_batch)
     #write to tensorboard
     writer.add_scalar('val_pde_loss', val_losses[-1],(epoch + 1))
+    writer.add_scalar('val_true_pde_loss', val_true_losses[-1],(epoch + 1))
     writer.add_scalar('val_du_loss', val_du_losses[-1],(epoch + 1))
     writer.add_scalar('val_dv_loss', val_dv_losses[-1],(epoch + 1))
     writer.add_scalar('val_k_loss', val_k_losses[-1],(epoch + 1))
 
     writer.add_scalar('train_pde_loss', train_losses[-1],(epoch + 1))
+    writer.add_scalar('train_true_pde_loss', train_true_losses[-1],(epoch + 1))
     writer.add_scalar('train_du_loss', train_du_losses[-1],(epoch + 1))
     writer.add_scalar('train_dv_loss', train_dv_losses[-1],(epoch + 1))
     writer.add_scalar('train_k_loss', train_k_losses[-1],(epoch + 1))

@@ -89,6 +89,7 @@ class TwoDReacDiff_MultiParam(object):
         self.image_size = image_size
         self.frame_step = frame_step
         self.idx = 0
+        self.train = train
         self.h5_paths = glob.glob(f"{self.data_root}/*.h5")
         self.h5_files = [h5py.File(file, "r") for file in self.h5_paths]
         self.seqs = [list(h5_file.keys()) for h5_file in self.h5_files]
@@ -113,18 +114,19 @@ class TwoDReacDiff_MultiParam(object):
         du = float(elements[0].split("_")[0])
         dv = float(elements[1].split("_")[0])
         k = float(elements[2].split(".")[0] + "." + elements[2].split(".")[1])
-        return du, dv, k
+        return k, du, dv
 
 
     def __len__(self):
-        return len(self.seqs)
+        return 4000 if self.train else 1000 # number of [parameter, trajectory, window] combinations we see per epoch
               
     def __getitem__(self, index):
-        seqs = self.seqs[self.idx]
-        seq = np.random.choice(seqs, 1) # choose a random trajectory within this file
-        h5_file = self.h5_files[self.idx]
-        h5_path = self.h5_paths[self.idx]
-        du, dv, k = self.extract_params_from_path(h5_path)
+        file = np.random.randint(len(self.seqs))
+        seqs = self.seqs[file] # choose a random file (i.e parameter value) from 108 possibilies
+        seq = np.random.choice(seqs, 1) # choose a random trajectory within this file from 8 (val) or 32 (train) possibilites
+        h5_file = self.h5_files[file]
+        h5_path = self.h5_paths[file]
+        k, du, dv = self.extract_params_from_path(h5_path)
         
         if self.idx == len(self.seqs) - 1:
             #loop back to beginning
@@ -136,13 +138,13 @@ class TwoDReacDiff_MultiParam(object):
         #get data
         vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
 
-        #sample a random window from this trajectory
+        #sample a random window from this trajectory (101 - self.seq_len possibilities)
         start  = np.random.randint(0, vid.shape[0] - self.seq_len)
         vid = vid[start:start+self.seq_len]
         
         if self.frame_step > 1:
             vid = vid[::self.frame_step]  # only take the video frames
         #return video and parameters
-        return vid.reshape(-1, self.image_size, self.image_size), (du, dv, k)
+        return vid.reshape(-1, self.image_size, self.image_size), (k, du, dv)
 
 
