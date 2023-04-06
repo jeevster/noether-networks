@@ -41,7 +41,7 @@ python train_embedding.py \
 --num_emb_frames 10 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir ./results/multiparam_test_issuesfixed/ \
+--log_dir ./results/multiparam_test_dimissuesfixed/ \
 --channels 2 \
 --tailor \
 --random_weights \

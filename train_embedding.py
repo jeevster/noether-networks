@@ -251,9 +251,8 @@ test_loader = DataLoader(test_data,
 
 def get_batch_generator(data_loader):
     while True:
-        for sequence in data_loader:
-            batch = torch.stack(utils.normalize_data(opt, dtype, sequence[0]), dim =1)
-            params = sequence[1]
+        for (data, params) in data_loader:
+            batch = torch.stack(utils.normalize_data(opt, dtype, data), dim =1)
             yield batch, params
             
 

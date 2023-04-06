@@ -140,7 +140,7 @@ class TwoDReacDiff_MultiParam(object):
 
         #sample a random window from this trajectory (101 - self.seq_len possibilities)
         start  = np.random.randint(0, vid.shape[0] - self.seq_len)
-        vid = vid[start:start+self.seq_len]
+        vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2))
         
         if self.frame_step > 1:
             vid = vid[::self.frame_step]  # only take the video frames

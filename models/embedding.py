@@ -215,7 +215,7 @@ class ParameterNet(nn.Module):
         self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
                                in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
 
-        self.conv = nn.Sequential(Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
+        self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
                                   nn.MaxPool2d(4),
                                   Conv2d(hidden_channels, hidden_channels,
@@ -231,7 +231,7 @@ class ParameterNet(nn.Module):
         if len(x.shape) == 5:
             x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
-        #x = self.fno_encoder(x)
+        x = self.fno_encoder(x)
         x = self.conv(x)
         x = torch.flatten(x, start_dim=1)
         return self.mlp(x)
