@@ -386,8 +386,8 @@ for epoch in range(0, opt.n_epochs):
                 k_pred, du_pred, dv_pred = pred_params
                 k, du, dv = params
                 du = du.to(torch.device("cuda"))
-                dv = du.to(torch.device("cuda"))
-                k = du.to(torch.device("cuda"))
+                dv = dv.to(torch.device("cuda"))
+                k = k.to(torch.device("cuda"))
                 val_du_loss += ((du_pred - du).abs() / du).mean()
                 val_dv_loss += ((dv_pred - dv).abs() / dv).mean()
                 val_k_loss += ((k_pred - k).abs() / k).mean()
@@ -425,8 +425,8 @@ for epoch in range(0, opt.n_epochs):
         k_pred, du_pred, dv_pred = pred_params
         k, du, dv = params
         du = du.to(torch.device("cuda"))
-        dv = du.to(torch.device("cuda"))
-        k = du.to(torch.device("cuda"))
+        dv = dv.to(torch.device("cuda"))
+        k = k.to(torch.device("cuda"))
         train_du_loss += ((du_pred - du).abs() / du).mean()
         train_dv_loss += ((dv_pred - dv).abs() / dv).mean()
         train_k_loss += ((k_pred - k).abs() / k).mean()
