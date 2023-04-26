@@ -104,7 +104,7 @@ class TwoDReacDiff_MultiParam(object):
         if train:
             self.seqs = [seq[:int(len(seq)*percent_train)] for seq in self.seqs]
         else:
-            self.seqs = [seq[int((len(seq)+1)*percent_train):] for seq in self.seqs]
+            self.seqs = [seq[int((len(seq))*percent_train):] for seq in self.seqs]
         
         print(f"Initialized {'train' if train else 'test'} dataset with {len(self.seqs)} examples")
 
@@ -122,8 +122,8 @@ class TwoDReacDiff_MultiParam(object):
               
     def __getitem__(self, index):
         file = np.random.randint(len(self.seqs))
-        seqs = self.seqs[file] # choose a random file (i.e parameter value) from 108 possibilies
-        seq = np.random.choice(seqs, 1) # choose a random trajectory within this file from 8 (val) or 32 (train) possibilites
+        seqs = self.seqs[file] # choose a random file (i.e parameter value) from 1372 possibilies
+        seq = np.random.choice(seqs, 1) # choose a random trajectory within this file from 1 (val) or 4 (train) possibilites
         h5_file = self.h5_files[file]
         h5_path = self.h5_paths[file]
         k, du, dv = self.extract_params_from_path(h5_path)
@@ -138,8 +138,9 @@ class TwoDReacDiff_MultiParam(object):
         #get data
         vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
 
-        #sample a random window from this trajectory (101 - self.seq_len possibilities)
-        start  = np.random.randint(0, vid.shape[0] - self.seq_len)
+        #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
+        start  = np.random.randint(20, vid.shape[0] - self.seq_len)
+        #start = 0
         vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2))
         
         if self.frame_step > 1:

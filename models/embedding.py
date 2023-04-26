@@ -13,7 +13,7 @@ import deepxde as dde
 from neuralop.models import FNO, FNO1d
 from os.path import join
 from functools import partial
-
+from models.nithin_embedding import reaction_diff_2d_residual_compute
 from models.cn import replace_cn_layers
 
 
@@ -108,6 +108,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # initialize learnable networks
         self.in_channels = in_channels
         self.in_size = in_size
+        self.device = torch.cuda.current_device()
 
         # param is either a newtwork or a callable constant
         if learned:
@@ -116,18 +117,18 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         else:
             self.paramnet = ConstantLayer(5e-3, 1e-3, 5e-3)
         # initialize grid for finite differences
-        file = h5py.File(join(data_root, "2D_diff-react_Du=0.01704641_Dv=0.0154535_k=0.009386063.h5"))
-        x = torch.Tensor(file['0001']['grid']['x'][:])
-        y = torch.Tensor(file['0001']['grid']['y'][:])
-        t = torch.Tensor(file['0001']['grid']['t'][:])
-        self.dx = x[1] - x[0]
-        self.dy = y[1] - y[0]
-        self.dt = t[1] - t[0]
+        try:
+            file = h5py.File(join(data_root, "2D_diff-react_Du=0.01704641_Dv=0.0154535_k=0.009386063.h5"))
+        except:
+            file = h5py.File(join(data_root, '2D_diff-react_Du=0.4978229_Dv=0.3132344_k=0.08693649.h5'))
 
-        # initialize 2nd order forward difference approximations
-        # self.dxx_op = torch.Tensor([2, -5, 4, -1]).unsqueeze(-1) / (self.dx**3)
-        # self.dyy_op = self.dxx_op.T * (self.dx/self.dy)**3
-        # self.dt_op = torch.Tensor([-3, 4, -1]).unsqueeze(-1).unsqueeze(-1) / (2*self.dt)
+        self.x = torch.Tensor(file['0001']['grid']['x'][:]).to(self.device)
+        self.y = torch.Tensor(file['0001']['grid']['y'][:]).to(self.device)
+        self.t = torch.Tensor(file['0001']['grid']['t'][:]).to(self.device)
+        self.dx = (self.x[1] - self.x[0])
+        self.dy = (self.y[1] - self.y[0])
+        self.dt = (self.t[1] - self.t[0])
+
 
     def reaction_1(self, solution_field, k):
         u = solution_field[:, -1, 0]
@@ -146,66 +147,82 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
                                                     self.in_channels), self.in_channels,
                                                 solution_field.shape[2], solution_field.shape[3])
 
-        # shape: [batch_size, num_emb_frames, num_channels, size, size]                                        )
+        params = self.paramnet(solution_field)
+        k = params[:, 0]
+        Du = params[:, 1]
+        Dv = params[:, 2]
+
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
-
-        # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
-        last_u = u_stack[:, -1]
-        last_v = v_stack[:, -1]
-        du_xx = (-1*last_u[:, 0:-4, 2:-2] + 16*last_u[:, 1:-3, 2:-2] - 30*last_u[:, 2:-2,
-                 2:-2] + 16*last_u[:, 3:-1, 2:-2] - 1*last_u[:, 4:, 2:-2]) / (12*self.dx**2)
-        du_yy = (-1*last_u[:, 2:-2, 0:-4] + 16*last_u[:, 2:-2, 1:-3] - 30*last_u[:, 2:-2,
-                 2:-2] + 16*last_u[:, 2:-2, 3:-1] - 1*last_u[:, 2:-2, 4:]) / (12*self.dx**2)
-
-        dv_xx = (-1*last_v[:, 0:-4, 2:-2] + 16*last_v[:, 1:-3, 2:-2] - 30*last_v[:, 2:-2,
-                 2:-2] + 16*last_v[:, 3:-1, 2:-2] - 1*last_v[:, 4:, 2:-2]) / (12*self.dx**2)
-        dv_yy = (-1*last_v[:, 2:-2, 0:-4] + 16*last_v[:, 2:-2, 1:-3] - 30*last_v[:, 2:-2,
-                 2:-2] + 16*last_v[:, 2:-2, 3:-1] - 1*last_v[:, 2:-2, 4:]) / (12*self.dx**2)
-
-        # pad with zeros
-        du_xx = utils.pad_zeros(du_xx, self.in_size)
-        du_yy = utils.pad_zeros(du_yy, self.in_size)
-        dv_xx = utils.pad_zeros(dv_xx, self.in_size)
-        dv_yy = utils.pad_zeros(dv_yy, self.in_size)
-
-        # compute time derivatives on stack of frames (use 1st order backward difference scheme)
-        du_t = (last_u - u_stack[:, -2]) / self.dt
-        dv_t = (last_v - v_stack[:, -2]) / self.dt
-
-        #predict params - all with the same network
-        params = self.paramnet(solution_field)
-    
-        k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
-        Du = params[:, 1].unsqueeze(-1).unsqueeze(-1)
-        Dv = params[:, 2].unsqueeze(-1).unsqueeze(-1)
-
-        # du_dt = Du*du_dxx + Du*du_dyy + Ru
-        eq1 = du_t - self.reaction_1(solution_field,
-                                     k=k) - Du * (du_xx + du_yy)
-        # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
-        eq2 = dv_t - self.reaction_2(solution_field) - \
-            Dv* (dv_xx + dv_yy)
-
-        
+        residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
         if true_params is not None:
             k_true, Du_true, Dv_true = true_params
-            eq1_true = du_t - self.reaction_1(solution_field,
-                                     k=k_true.unsqueeze(-1).unsqueeze(-1)) - Du_true.unsqueeze(-1).unsqueeze(-1) * (du_xx + du_yy)
-            
-            eq2_true = dv_t - self.reaction_2(solution_field) - \
-                        Dv_true.unsqueeze(-1).unsqueeze(-1)* (dv_xx + dv_yy)
-            
+            true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
         if return_params:
             if true_params is not None:
-                return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2], (k, Du, Dv)
+                return residual, true_residual, (k, Du, Dv)
             else:
-                return (eq1 + eq2)[:, 2:-2, 2:-2], (k, Du, Dv)
+                return residual, (k, Du, Dv)
         else:
             if true_params is not None:
-                return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2]
+                return residual, true_residual
             else:
-                return (eq1 + eq2)[:, 2:-2, 2:-2]
+                return residual
+
+        # # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
+        # last_u = u_stack[:, -1]
+        # last_v = v_stack[:, -1]
+        # du_xx = (-1*last_u[:, 0:-4, 2:-2] + 16*last_u[:, 1:-3, 2:-2] - 30*last_u[:, 2:-2,
+        #          2:-2] + 16*last_u[:, 3:-1, 2:-2] - 1*last_u[:, 4:, 2:-2]) / (12*self.dx**2)
+        # du_yy = (-1*last_u[:, 2:-2, 0:-4] + 16*last_u[:, 2:-2, 1:-3] - 30*last_u[:, 2:-2,
+        #          2:-2] + 16*last_u[:, 2:-2, 3:-1] - 1*last_u[:, 2:-2, 4:]) / (12*self.dx**2)
+
+        # dv_xx = (-1*last_v[:, 0:-4, 2:-2] + 16*last_v[:, 1:-3, 2:-2] - 30*last_v[:, 2:-2,
+        #          2:-2] + 16*last_v[:, 3:-1, 2:-2] - 1*last_v[:, 4:, 2:-2]) / (12*self.dx**2)
+        # dv_yy = (-1*last_v[:, 2:-2, 0:-4] + 16*last_v[:, 2:-2, 1:-3] - 30*last_v[:, 2:-2,
+        #          2:-2] + 16*last_v[:, 2:-2, 3:-1] - 1*last_v[:, 2:-2, 4:]) / (12*self.dx**2)
+
+        # # pad with zeros
+        # du_xx = utils.pad_zeros(du_xx, self.in_size)
+        # du_yy = utils.pad_zeros(du_yy, self.in_size)
+        # dv_xx = utils.pad_zeros(dv_xx, self.in_size)
+        # dv_yy = utils.pad_zeros(dv_yy, self.in_size)
+
+        # # compute time derivatives on stack of frames (use 1st order backward difference scheme)
+        # du_t = (last_u - u_stack[:, -2]) / self.dt
+        # dv_t = (last_v - v_stack[:, -2]) / self.dt
+
+        #predict params - all with the same network
+        # params = self.paramnet(solution_field)
+    
+        # k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
+        # Du = params[:, 1].unsqueeze(-1).unsqueeze(-1)
+        # Dv = params[:, 2].unsqueeze(-1).unsqueeze(-1)
+
+        # # du_dt = Du*du_dxx + Du*du_dyy + Ru
+        # eq1 = du_t - self.reaction_1(solution_field,
+        #                              k=k) - Du * (du_xx + du_yy)
+        # # dv_dt = Dv*dv_dxx + Dv*dv_dyy + Rv
+        # eq2 = dv_t - self.reaction_2(solution_field) - \
+        #     Dv* (dv_xx + dv_yy)
+        # if true_params is not None:
+        #     k_true, Du_true, Dv_true = true_params
+        #     eq1_true = du_t - self.reaction_1(solution_field,
+        #                              k=k_true.unsqueeze(-1).unsqueeze(-1)) - Du_true.unsqueeze(-1).unsqueeze(-1) * (du_xx + du_yy)
+            
+        #     eq2_true = dv_t - self.reaction_2(solution_field) - \
+        #                 Dv_true.unsqueeze(-1).unsqueeze(-1)* (dv_xx + dv_yy)
+        
+        # if return_params:
+        #     if true_params is not None:
+        #         return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2], (k, Du, Dv)
+        #     else:
+        #         return (eq1 + eq2)[:, 2:-2, 2:-2], (k, Du, Dv)
+        # else:
+        #     if true_params is not None:
+        #         return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2]
+        #     else:
+        #         return (eq1 + eq2)[:, 2:-2, 2:-2]
 
 
 class ParameterNet(nn.Module):
@@ -215,7 +232,7 @@ class ParameterNet(nn.Module):
         self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
                                in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
 
-        self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
+        self.conv = nn.Sequential(Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
                                   nn.MaxPool2d(4),
                                   Conv2d(hidden_channels, hidden_channels,
@@ -231,7 +248,7 @@ class ParameterNet(nn.Module):
         if len(x.shape) == 5:
             x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
-        x = self.fno_encoder(x)
+        #x = self.fno_encoder(x)
         x = self.conv(x)
         x = torch.flatten(x, start_dim=1)
         return self.mlp(x)

@@ -1,6 +1,6 @@
 #!/bin/bash
  
-DATADIR=/data/nithinc/generated_pdebench/2D/ReactionDiffusion
+DATADIR=/data/nithinc/pdebench/new_parameters/2D/ReactionDiffusion
 
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
 python train_embedding.py \
@@ -41,7 +41,7 @@ python train_embedding.py \
 --num_emb_frames 10 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir ./results/multiparam_test_dimissuesfixed/ \
+--log_dir ./results/multiparam_new_dataset_paramloss/ \
 --channels 2 \
 --tailor \
 --random_weights \
