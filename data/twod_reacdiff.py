@@ -89,6 +89,7 @@ class TwoDReacDiff_MultiParam(object):
         self.image_size = image_size
         self.frame_step = frame_step
         self.idx = 0
+        self.length = length
         self.train = train
         self.h5_paths = glob.glob(f"{self.data_root}/*.h5")
         self.h5_files = [h5py.File(file, "r") for file in self.h5_paths]
@@ -118,7 +119,7 @@ class TwoDReacDiff_MultiParam(object):
 
 
     def __len__(self):
-        return 4000 if self.train else 1000 # number of [parameter, trajectory, window] combinations we see per epoch
+        return self.length # number of [parameter, trajectory, window] combinations we see per epoch
               
     def __getitem__(self, index):
         file = np.random.randint(len(self.seqs))

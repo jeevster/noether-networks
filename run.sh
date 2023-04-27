@@ -24,12 +24,12 @@ python train_embedding.py \
 --fno_layers 2 \
 --emb_dim 64 \
 --pde_emb \
---batch_size 64 \
+--batch_size 32 \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
 --n_epochs 100 \
---train_set_length 1000 \
---test_set_length 200 \
+--train_set_length 100 \
+--test_set_length 32 \
 --inner_lr .0001 \
 --val_inner_lr .0001 \
 --outer_lr .0001 \
@@ -41,7 +41,7 @@ python train_embedding.py \
 --num_emb_frames 10 \
 --horiz_flip \
 --reuse_lstm_eps \
---log_dir ./results/multiparam_new_dataset_paramloss/ \
+--log_dir ./results/multiparam_new_dataset_logparamloss_newresiduals/ \
 --channels 2 \
 --tailor \
 --random_weights \

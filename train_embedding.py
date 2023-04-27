@@ -407,14 +407,14 @@ for epoch in range(0, opt.n_epochs):
                 data, params = next(testing_batch_generator)
                 params = tuple([param.to(torch.device("cuda")) for param in params])
                 pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-                val_loss += torch.abs(pde_value).mean().log10()
-                val_true_loss += torch.abs(true_pde_value).mean().log10()
+                val_loss += torch.abs(pde_value).log10().mean()
+                val_true_loss += torch.abs(true_pde_value).log10().mean()
                 k_pred, du_pred, dv_pred = pred_params
                 k, du, dv = params
                 du = du.to(torch.device("cuda"))
                 dv = dv.to(torch.device("cuda"))
                 k = k.to(torch.device("cuda"))
-                val_param_loss += (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
+                val_param_loss += (du_pred - du).pow(2).log10().mean() + (dv_pred - dv).pow(2).log10().mean() + (k_pred - k).pow(2).log10().mean()
                 val_du_loss += ((du_pred - du).abs() / du).mean()
                 val_dv_loss += ((dv_pred - dv).abs() / dv).mean()
                 val_k_loss += ((k_pred - k).abs() / k).mean()
@@ -470,9 +470,8 @@ for epoch in range(0, opt.n_epochs):
         
         pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
 
-        optimizer.zero_grad()
-        loss = (pde_value).abs().mean().log10()
-        true_loss = (true_pde_value).abs().mean().log10()
+        loss = (pde_value).abs().log10().mean()
+        true_loss = (true_pde_value).abs().log10().mean()
         
         train_loss+=loss
         train_true_loss +=true_loss
@@ -486,11 +485,14 @@ for epoch in range(0, opt.n_epochs):
         train_dv_loss += ((dv_pred - dv).abs() / dv).mean()
         train_k_loss += ((k_pred - k).abs() / k).mean()
         #train to match params
-        loss = (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
-        loss.backward()
+        optimizer.zero_grad()
+        param_loss = (du_pred - du).pow(2).log10().mean() + (dv_pred - dv).pow(2).log10().mean() + (k_pred - k).pow(2).log10().mean()
+        param_loss.backward()
+        #gradient clipping
+        torch.nn.utils.clip_grad_norm_(embedding.parameters(), max_norm = 1)
         optimizer.step()
         
-        train_param_loss+=loss
+        train_param_loss+=param_loss
 
         train_du_mean += du.mean()
         train_dv_mean += dv.mean()

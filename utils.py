@@ -166,7 +166,7 @@ def load_dataset(opt):
             seq_len=opt.num_emb_frames,
             percent_train=(opt.train_set_length/length),
             frame_step=frame_step,
-            length=length,
+            length=opt.train_set_length,
         )
         test_data = TwoDReacDiff_MultiParam(
             data_root=opt.data_root,
@@ -175,7 +175,7 @@ def load_dataset(opt):
             seq_len=opt.num_emb_frames,
             percent_train=(opt.train_set_length/length),
             frame_step=frame_step,
-            length=length,
+            length=opt.test_set_length,
         )
 
     else:

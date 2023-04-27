@@ -147,17 +147,22 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
                                                     self.in_channels), self.in_channels,
                                                 solution_field.shape[2], solution_field.shape[3])
 
+        
+
+        u_stack = solution_field[:, :, 0]
+        v_stack = solution_field[:, :, 1]
+
         params = self.paramnet(solution_field)
         k = params[:, 0]
         Du = params[:, 1]
         Dv = params[:, 2]
 
-        u_stack = solution_field[:, :, 0]
-        v_stack = solution_field[:, :, 1]
-        residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
-        if true_params is not None:
-            k_true, Du_true, Dv_true = true_params
-            true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
+        with torch.no_grad():
+            #compute residuals only on final 2 frames
+            residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
+            if true_params is not None:
+                k_true, Du_true, Dv_true = true_params
+                true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
         if return_params:
             if true_params is not None:
                 return residual, true_residual, (k, Du, Dv)
@@ -169,7 +174,8 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
             else:
                 return residual
 
-        # # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
+        # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
+        
         # last_u = u_stack[:, -1]
         # last_v = v_stack[:, -1]
         # du_xx = (-1*last_u[:, 0:-4, 2:-2] + 16*last_u[:, 1:-3, 2:-2] - 30*last_u[:, 2:-2,
@@ -192,7 +198,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         # du_t = (last_u - u_stack[:, -2]) / self.dt
         # dv_t = (last_v - v_stack[:, -2]) / self.dt
 
-        #predict params - all with the same network
+        # #predict params - all with the same network
         # params = self.paramnet(solution_field)
     
         # k = params[:, 0].unsqueeze(-1).unsqueeze(-1)
@@ -212,6 +218,8 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
             
         #     eq2_true = dv_t - self.reaction_2(solution_field) - \
         #                 Dv_true.unsqueeze(-1).unsqueeze(-1)* (dv_xx + dv_yy)
+
+        # import pdb; pdb.set_trace()
         
         # if return_params:
         #     if true_params is not None:
@@ -223,6 +231,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #         return (eq1 + eq2)[:, 2:-2, 2:-2], (eq1_true + eq2_true)[:, 2:-2, 2:-2]
         #     else:
         #         return (eq1 + eq2)[:, 2:-2, 2:-2]
+        
 
 
 class ParameterNet(nn.Module):
