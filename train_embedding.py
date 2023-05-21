@@ -414,7 +414,7 @@ for epoch in range(0, opt.n_epochs):
                 du = du.to(torch.device("cuda"))
                 dv = dv.to(torch.device("cuda"))
                 k = k.to(torch.device("cuda"))
-                val_param_loss += (du_pred - du).pow(2).log10().mean() + (dv_pred - dv).pow(2).log10().mean() + (k_pred - k).pow(2).log10().mean()
+                val_param_loss += (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
                 val_du_loss += ((du_pred - du).abs() / du).mean()
                 val_dv_loss += ((dv_pred - dv).abs() / dv).mean()
                 val_k_loss += ((k_pred - k).abs() / k).mean()
@@ -428,7 +428,7 @@ for epoch in range(0, opt.n_epochs):
                 
             
             #step scheduler
-            #scheduler.step(val_loss)
+            scheduler.step(val_param_loss)
             val_losses.append(val_loss / opt.num_val_batch)
             val_true_losses.append(val_true_loss / opt.num_val_batch)
             val_du_losses.append(val_du_loss / opt.num_val_batch)
@@ -464,7 +464,7 @@ for epoch in range(0, opt.n_epochs):
     
 
     for batch_num in tqdm(range(opt.num_train_batch)):
-        
+        optimizer.zero_grad()
         data, params = next(testing_batch_generator)
         params = tuple([param.to(torch.device("cuda")) for param in params])
         
@@ -485,9 +485,9 @@ for epoch in range(0, opt.n_epochs):
         train_dv_loss += ((dv_pred - dv).abs() / dv).mean()
         train_k_loss += ((k_pred - k).abs() / k).mean()
         #train to match params
-        optimizer.zero_grad()
-        param_loss = (du_pred - du).pow(2).log10().mean() + (dv_pred - dv).pow(2).log10().mean() + (k_pred - k).pow(2).log10().mean()
-        param_loss.backward()
+        
+        param_loss = (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
+        loss.backward()
         #gradient clipping
         torch.nn.utils.clip_grad_norm_(embedding.parameters(), max_norm = 1)
         optimizer.step()

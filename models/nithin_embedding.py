@@ -62,7 +62,7 @@ def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv):
     #     u_x, u_y, u_xx, u_yy, u_t = partials(u, x, y, t)
     #     v_x, v_y, v_xx, v_yy, v_t = partials(v, x, y, t)
 
-
+    #2d reaction diffusion equations
     ru = u - (u ** 3) - k - v
     rv = u - v
     eqn1 = du * u_xx + du * u_yy + ru - u_t

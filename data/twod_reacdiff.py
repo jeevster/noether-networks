@@ -88,7 +88,6 @@ class TwoDReacDiff_MultiParam(object):
         self.seq_len = seq_len
         self.image_size = image_size
         self.frame_step = frame_step
-        self.idx = 0
         self.length = length
         self.train = train
         self.h5_paths = glob.glob(f"{self.data_root}/*.h5")
@@ -119,29 +118,32 @@ class TwoDReacDiff_MultiParam(object):
 
 
     def __len__(self):
-        return self.length # number of [parameter, trajectory, window] combinations we see per epoch
+        return 20 # only 20 param combinations - test overfitting
+        #return len(self.seqs) # number of [parameter, trajectory, window] combinations we see per epoch
               
     def __getitem__(self, index):
-        file = np.random.randint(len(self.seqs))
+        
+        #file = np.random.randint(len(self.seqs))
+        file = index
         seqs = self.seqs[file] # choose a random file (i.e parameter value) from 1372 possibilies
-        seq = np.random.choice(seqs, 1) # choose a random trajectory within this file from 1 (val) or 4 (train) possibilites
+
+        seq = seqs[0]
+        #seq = np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
         h5_file = self.h5_files[file]
         h5_path = self.h5_paths[file]
         k, du, dv = self.extract_params_from_path(h5_path)
         
-        if self.idx == len(self.seqs) - 1:
-            #loop back to beginning
-            self.idx = 0
-        else:
-            self.idx+=1
-
         
         #get data
-        vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
+        try:
+            vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
+        except:
+            vid = torch.Tensor(np.array(h5_file[f"{seq}/data"], dtype="f")).to(torch.cuda.current_device())
+
 
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
-        start  = np.random.randint(20, vid.shape[0] - self.seq_len)
-        #start = 0
+        #start  = np.random.randint(20, vid.shape[0] - self.seq_len)
+        start = 20
         vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2))
         
         if self.frame_step > 1:
