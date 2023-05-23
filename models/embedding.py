@@ -161,9 +161,9 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #new residual calculation from Nithin - running out of memory unless we do torch.no_grad() which wont work for training to residual directly
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
         if true_params is not None:
-            #with torch.no_grad():
-            k_true, Du_true, Dv_true = true_params
-            true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
+            with torch.no_grad():
+                k_true, Du_true, Dv_true = true_params
+                true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
         if return_params:
             if true_params is not None:
                 return residual, true_residual, (k, Du, Dv)

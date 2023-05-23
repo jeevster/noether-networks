@@ -168,6 +168,9 @@ parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
 
+parser.add_argument('--param_loss', action = 'store_true',
+                    help='parameter supervision to pre-train embedding model')
+
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
 
@@ -319,7 +322,6 @@ embedding = nn.Identity() if not opt.tailor else embedding
 print('emb summary')
 summary(embedding, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
 
-
 # Init optimizer
 params = [p[1] for p in embedding.named_parameters() if not (
     'gamma' in p[0] or 'beta' in p[0])]
@@ -327,7 +329,7 @@ params = [p[1] for p in embedding.named_parameters() if not (
 
 # define outer optimizer
 optimizer = optim.Adam(params, lr=opt.outer_lr)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=10)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=15)
 
 baseline_outer_losses = []
 outer_losses = []
@@ -428,7 +430,11 @@ for epoch in range(0, opt.n_epochs):
                 
             
             #step scheduler
-            scheduler.step(val_param_loss)
+            if opt.param_loss:
+                scheduler.step(val_param_loss)
+            else:
+                scheduler.step(val_loss)
+
             val_losses.append(val_loss / opt.num_val_batch)
             val_true_losses.append(val_true_loss / opt.num_val_batch)
             val_du_losses.append(val_du_loss / opt.num_val_batch)
@@ -475,7 +481,6 @@ for epoch in range(0, opt.n_epochs):
         
         train_loss+=loss
         train_true_loss +=true_loss
-        
         k_pred, du_pred, dv_pred = pred_params
         k, du, dv = params
         du = du.to(torch.device("cuda"))
@@ -487,7 +492,10 @@ for epoch in range(0, opt.n_epochs):
         #train to match params
         
         param_loss = (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
-        loss.backward()
+        if opt.param_loss:
+            param_loss.backward()
+        else:
+            loss.backward()
         #gradient clipping
         torch.nn.utils.clip_grad_norm_(embedding.parameters(), max_norm = 1)
         optimizer.step()

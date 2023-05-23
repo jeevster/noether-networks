@@ -118,14 +118,14 @@ class TwoDReacDiff_MultiParam(object):
 
 
     def __len__(self):
-        return 20 # only 20 param combinations - test overfitting
-        #return len(self.seqs) # number of [parameter, trajectory, window] combinations we see per epoch
+        #return 20 # only 20 param combinations - test overfitting
+        return len(self.seqs) if self.train else 100 # number of [parameter, trajectory, window] combinations we see per epoch
               
     def __getitem__(self, index):
         
         #file = np.random.randint(len(self.seqs))
         file = index
-        seqs = self.seqs[file] # choose a random file (i.e parameter value) from 1372 possibilies
+        seqs = self.seqs[file] # choose a file (i.e parameter value) from 1372 possibilies
 
         seq = seqs[0]
         #seq = np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
