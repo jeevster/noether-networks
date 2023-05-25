@@ -80,7 +80,7 @@ class TwoDReacDiff_MultiParam(object):
     def __init__(self, data_root, train=True,
                  seq_len=101, image_size=128, length=-1, percent_train=.8,
                  frame_step=1,
-                 shuffle=False):
+                 shuffle=False, num_param_combinations=-1, fixed_ic = False, fixed_window = False):
         '''
         if length == -1, use all sequences available
         '''
@@ -93,6 +93,9 @@ class TwoDReacDiff_MultiParam(object):
         self.h5_paths = glob.glob(f"{self.data_root}/*.h5")
         self.h5_files = [h5py.File(file, "r") for file in self.h5_paths]
         self.seqs = [list(h5_file.keys()) for h5_file in self.h5_files]
+        self.num_param_combinations = num_param_combinations
+        self.fixed_ic = fixed_ic
+        self.fixed_window = fixed_window
 
 
         if shuffle:
@@ -118,8 +121,10 @@ class TwoDReacDiff_MultiParam(object):
 
 
     def __len__(self):
-        #return 20 # only 20 param combinations - test overfitting
-        return len(self.seqs) if self.train else 100 # number of [parameter, trajectory, window] combinations we see per epoch
+        if self.train:
+            return self.num_param_combinations if self.num_param_combinations > 0 else len(self.seqs)# only 20 param combinations - test overfitting
+        else:
+            return int(self.num_param_combinations/4) if self.num_param_combinations > 0 else int(len(self.seqs)/4) # number of [parameter, trajectory, window] combinations we see per epoch
               
     def __getitem__(self, index):
         
@@ -127,8 +132,8 @@ class TwoDReacDiff_MultiParam(object):
         file = index
         seqs = self.seqs[file] # choose a file (i.e parameter value) from 1372 possibilies
 
-        seq = seqs[0]
-        #seq = np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
+        seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
+
         h5_file = self.h5_files[file]
         h5_path = self.h5_paths[file]
         k, du, dv = self.extract_params_from_path(h5_path)
@@ -142,8 +147,7 @@ class TwoDReacDiff_MultiParam(object):
 
 
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
-        #start  = np.random.randint(20, vid.shape[0] - self.seq_len)
-        start = 20
+        start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
         vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2))
         
         if self.frame_step > 1:

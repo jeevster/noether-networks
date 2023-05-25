@@ -167,6 +167,9 @@ def load_dataset(opt):
             percent_train=(opt.train_set_length/length),
             frame_step=frame_step,
             length=opt.train_set_length,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
         )
         test_data = TwoDReacDiff_MultiParam(
             data_root=opt.data_root,
@@ -176,6 +179,9 @@ def load_dataset(opt):
             percent_train=(opt.train_set_length/length),
             frame_step=frame_step,
             length=opt.test_set_length,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
         )
 
     else:

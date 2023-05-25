@@ -121,7 +121,7 @@ parser.add_argument('--num_emb_frames', type=int, default=2,
 parser.add_argument('--horiz_flip', action='store_true',
                     help='randomly flip phys101 sequences horizontally (p=.5)?')
 parser.add_argument('--train_set_length', type=int,
-                    default=256, help='size of training set')
+                    default=-1, help='size of training set')
 parser.add_argument('--test_set_length', type=int,
                     default=-1, help='size of test set')
 parser.add_argument('--baseline', action='store_true',
@@ -170,6 +170,15 @@ parser.add_argument('--warmstart_emb_path', default='',
 
 parser.add_argument('--param_loss', action = 'store_true',
                     help='parameter supervision to pre-train embedding model')
+parser.add_argument('--num_learned_parameters', type=int, default=3,
+                    help='number of parameters to learn in PDE embedding')
+parser.add_argument('--num_param_combinations', type=int, default=-1,
+                    help='number of parameters combinations to use in dataloader')
+parser.add_argument('--fixed_ic', action = 'store_true',
+                    help='train on a single initial condition for each parameter combination')
+parser.add_argument('--fixed_window', action = 'store_true',
+                    help='train on a single window of the trajectory for each parameter/IC combination')
+
 
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
@@ -233,6 +242,7 @@ if opt.stack_frames:
 opt.n_eval = opt.n_past+opt.n_future  # this is the sequence length
 opt.max_step = opt.n_eval
 
+import pdb; pdb.set_trace()
 if (opt.num_train_batch == -1) or (len(train_data) // opt.batch_size < opt.num_train_batch):
     opt.num_train_batch = len(train_data) // opt.batch_size
 if (opt.num_val_batch == -1) or (len(test_data) // opt.batch_size < opt.num_val_batch):
@@ -303,7 +313,7 @@ if opt.conv_emb:
 elif opt.pde_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                 in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True)
+                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters)
     print('initialized Reaction Diffusion Embedding')
 elif opt.pde_const_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
@@ -319,8 +329,8 @@ else:
 # In the case where we don't do tailoring, we can drop the embedding
 embedding = nn.Identity() if not opt.tailor else embedding
 
-print('emb summary')
-summary(embedding, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
+# print('emb summary')
+# summary(embedding, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
 
 # Init optimizer
 params = [p[1] for p in embedding.named_parameters() if not (
