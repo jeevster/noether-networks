@@ -41,7 +41,7 @@ python train_embedding.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
---log_dir ./results_summer/test/ \
+--log_dir ./results_summer/pderesidualloss_onlylearnDu_lr1e-3_bs16_use_partials_fixedpderesidual/ \
 --channels 2 \
 --tailor \
 --random_weights \

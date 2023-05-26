@@ -58,20 +58,18 @@ def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv, return_partials 
     
     u_x, u_y, u_xx, u_yy, u_t = partials_torch(u, x, y, t)
     v_x, v_y, v_xx, v_yy, v_t = partials_torch(v, x, y, t)
-    # else:
-    #     u_x, u_y, u_xx, u_yy, u_t = partials(u, x, y, t)
-    #     v_x, v_y, v_xx, v_yy, v_t = partials(v, x, y, t)
-
+    
     #2d reaction diffusion equations
     ru = u - (u ** 3) - k - v
     rv = u - v
     eqn1 = du * u_xx + du * u_yy + ru - u_t
     eqn2 = dv * v_xx + dv * v_yy + rv - v_t
 
-    pde_residual = (eqn1 + eqn2).abs().mean(dim = (1,2,3))
+    #compute PDE residual - fixed
+    pde_residual = (eqn1.abs() + eqn2.abs()).mean(dim = (1,2,3))
     if return_partials:
         u_partials = torch.cat([u_x, u_y, u_xx, u_yy, u_t], dim = 1)
         v_partials = torch.cat([v_x, v_y, v_xx, v_yy, v_t], dim = 1)
         return pde_residual, torch.stack([u_partials, v_partials], dim = 2) #keep u and v partials separate
     else:
-        return (eqn1 + eqn2).abs().mean(dim = (1,2,3))
+        return pde_residual
