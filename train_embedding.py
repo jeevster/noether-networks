@@ -178,6 +178,9 @@ parser.add_argument('--fixed_ic', action = 'store_true',
                     help='train on a single initial condition for each parameter combination')
 parser.add_argument('--fixed_window', action = 'store_true',
                     help='train on a single window of the trajectory for each parameter/IC combination')
+parser.add_argument('--use_partials', action = 'store_true',
+                    help='input partial derivatives into embedding model in addition to solution field')
+
 
 
 opt = parser.parse_args()
@@ -242,7 +245,6 @@ if opt.stack_frames:
 opt.n_eval = opt.n_past+opt.n_future  # this is the sequence length
 opt.max_step = opt.n_eval
 
-import pdb; pdb.set_trace()
 if (opt.num_train_batch == -1) or (len(train_data) // opt.batch_size < opt.num_train_batch):
     opt.num_train_batch = len(train_data) // opt.batch_size
 if (opt.num_val_batch == -1) or (len(test_data) // opt.batch_size < opt.num_val_batch):
@@ -313,7 +315,7 @@ if opt.conv_emb:
 elif opt.pde_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                 in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters)
+                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
     print('initialized Reaction Diffusion Embedding')
 elif opt.pde_const_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,

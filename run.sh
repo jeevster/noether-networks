@@ -40,7 +40,8 @@ python train_embedding.py \
 --horiz_flip \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
---log_dir ./results_summer/pderesidualloss_onlylearnk_lr1e-3_bs16/ \
+--use_partials \
+--log_dir ./results_summer/test/ \
 --channels 2 \
 --tailor \
 --random_weights \

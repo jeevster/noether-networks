@@ -103,18 +103,22 @@ class ConstantLayer(nn.Module):
 
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
     # 2d diffusion-reaction module with learnable parameters
-    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, data_root, learned, num_learned_parameters = 3):
+    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, data_root, learned, num_learned_parameters = 3, use_partials = False):
         super(TwoDDiffusionReactionEmbedding, self).__init__()
         # initialize learnable networks
         self.in_channels = in_channels
         self.in_size = in_size
+        self.hidden_channels = hidden_channels
+        self.n_layers = n_layers
         self.device = torch.cuda.current_device()
         self.num_learned_parameters = num_learned_parameters
+        self.use_partials = use_partials
+        self.n_frames = n_frames if not self.use_partials else 6*n_frames #(5 partial derivatives + 1 solution field) =  6 
 
         # param is either a network or a callable constant
         if learned:
             self.paramnet = ParameterNet(
-                in_size, in_channels*n_frames, hidden_channels, n_layers, num_learned_parameters).to(self.device)
+                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters).to(self.device)
         else:
             self.paramnet = ConstantLayer(5e-3, 1e-3, 5e-3)
         # initialize grid for finite differences
@@ -153,15 +157,17 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
 
-        #predict params
-        params = self.paramnet(solution_field)
-        k = params[:, 0]
-        
         if true_params is not None:
             with torch.no_grad():
                 k_true, Du_true, Dv_true = true_params
-                true_residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true)
+                true_residual, partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true, return_partials = True)
 
+        #predict params using network
+        input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
+        params = self.paramnet(input_data)
+
+        #extract predicted params
+        k = params[:, 0]
         #set Du and/or Du to their true values if not learnable
         try:
             Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
@@ -169,6 +175,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         except:
             RuntimeError("Some parameters declared as not learnable but true parameters not provided")
         
+        #compute PDE residual
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
         
         if return_params:

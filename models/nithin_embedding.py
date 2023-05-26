@@ -51,7 +51,7 @@ def partials(data, x, y, t):
     return data_x, data_y, data_xx, data_yy, data_t
 
 
-def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv):
+def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv, return_partials = False):
     k = k.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
     du = du.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
     dv = dv.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
@@ -67,4 +67,11 @@ def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv):
     rv = u - v
     eqn1 = du * u_xx + du * u_yy + ru - u_t
     eqn2 = dv * v_xx + dv * v_yy + rv - v_t
-    return (eqn1 + eqn2).abs().mean(dim = (1,2,3))
+
+    pde_residual = (eqn1 + eqn2).abs().mean(dim = (1,2,3))
+    if return_partials:
+        u_partials = torch.cat([u_x, u_y, u_xx, u_yy, u_t], dim = 1)
+        v_partials = torch.cat([v_x, v_y, v_xx, v_yy, v_t], dim = 1)
+        return pde_residual, torch.stack([u_partials, v_partials], dim = 2) #keep u and v partials separate
+    else:
+        return (eqn1 + eqn2).abs().mean(dim = (1,2,3))
