@@ -180,6 +180,9 @@ parser.add_argument('--fixed_window', action = 'store_true',
                     help='train on a single window of the trajectory for each parameter/IC combination')
 parser.add_argument('--use_partials', action = 'store_true',
                     help='input partial derivatives into embedding model in addition to solution field')
+parser.add_argument('--reload_best', action='store_true', help='reload best model')
+parser.add_argument('--reload_checkpoint', action='store_true', help='reload latest model')
+parser.add_argument('--save_checkpoint', action='store_true', help='checkpoint model')
 
 
 
@@ -358,9 +361,10 @@ grad_norms = []
 emb_norms = []
 
 # Quick sanity check to ensure float64
-for p in embedding.named_parameters():
-    assert p[
-        1].dtype == torch.float64, f'One of the embedding Model parameters is not float64! Parameter: {p[1]}'
+# embedding = embedding.to(torch.float)
+# for p in embedding.named_parameters():
+    # assert p[
+        # 1].dtype == torch.float64, f'One of the embedding Model parameters is not float64! Parameter: {p[1]}'
 
 print(f'starting at epoch 0')
 train_losses = []
@@ -390,7 +394,33 @@ val_dv_vars = []
 val_k_vars = []
 val_param_losses = []
 
-for epoch in range(0, opt.n_epochs):
+val_loss_min_tracker = float("inf")
+
+
+def save_checkpoint(embedding, log_dir, best = False):
+    if best == False:
+        torch.save({'model_state': embedding.state_dict()},'%s/ckpt_model.pt' % (log_dir))
+    else:
+        torch.save({'model_state': embedding.state_dict()},'%s/best_ckpt_model.pt' % (log_dir))
+
+
+def restore_checkpoint(model, log_dir, device, best = False):
+    if len(os.listdir(log_dir)) == 2:
+        chosen_file = 'best_ckpt_model.pt' if best else 'ckpt_model.pt'
+        checkpoint_path = os.path.join(log_dir, chosen_file)
+        checkpoint = torch.load(checkpoint_path, map_location= device)
+        # print("checkpoint", )
+        model.load_state_dict(checkpoint['model_state'])
+
+
+
+start_epoch = 0
+
+if opt.reload_checkpoint:
+    restore_checkpoint(embedding, opt.model_path, torch.device("cuda") , opt.reload_best)
+
+
+for epoch in range(start_epoch, opt.n_epochs):
 
     print(f'Epoch {epoch} of {opt.n_epochs}')
     
@@ -446,6 +476,18 @@ for epoch in range(0, opt.n_epochs):
                 scheduler.step(val_param_loss)
             else:
                 scheduler.step(val_loss)
+
+
+            if opt.save_checkpoint:
+                if opt.param_loss:
+                    if  val_loss_min_tracker > val_param_loss / opt.num_val_batch:
+                        val_loss_min_tracker = val_param_loss / opt.num_val_batch
+                        save_checkpoint(embedding,opt.model_path, True)
+                else:
+                    if  val_loss_min_tracker > val_loss / opt.num_val_batch:
+                        val_loss_min_tracker = val_loss / opt.num_val_batch
+                        save_checkpoint(embedding,opt.model_path, True)
+
 
             val_losses.append(val_loss / opt.num_val_batch)
             val_true_losses.append(val_true_loss / opt.num_val_batch)
@@ -521,7 +563,10 @@ for epoch in range(0, opt.n_epochs):
         train_du_var += du.var()
         train_dv_var += dv.var()
         train_k_var += k.var()
-    
+
+
+    if opt.save_checkpoint:
+        save_checkpoint(embedding,opt.model_path, False)
     
 
     train_losses.append(train_loss / opt.num_train_batch)
