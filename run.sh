@@ -20,14 +20,14 @@ python train_embedding.py \
 --emb_type conserved \
 --num_epochs_per_val 1 \
 --fno_modes 16 \
---fno_width 128 \
---fno_layers 2 \
+--fno_width 256 \
+--fno_layers 4 \
 --emb_dim 64 \
 --pde_emb \
 --batch_size 16 \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
---n_epochs 200 \
+--n_epochs 140 \
 --inner_lr .0001 \
 --val_inner_lr .0001 \
 --outer_lr .001 \
@@ -41,10 +41,12 @@ python train_embedding.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
---log_dir ./results_summer/pderesidualloss_onlylearnDu_lr1e-3_bs16_use_partials_fixedpderesidual/ \
+--save_checkpoint \
+--log_dir ./results_summer/pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_fno4layers_width256/ \
 --channels 2 \
 --tailor \
 --random_weights \
 --inner_opt_all_model_weights \
 --batch_norm_to_group_norm \
 --model_path ./checkpoints/pdes/t_past2/batch_5d
+

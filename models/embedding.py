@@ -167,10 +167,10 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         params = self.paramnet(input_data)
 
         #extract predicted params
-        Du = params[:, 0]
+        k = params[:, 0]
         #set Du and/or Du to their true values if not learnable
         try:
-            k = params[:, 1] if self.num_learned_parameters >1 else k_true
+            Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
             Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
         except:
             RuntimeError("Some parameters declared as not learnable but true parameters not provided")

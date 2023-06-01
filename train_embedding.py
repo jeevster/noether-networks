@@ -219,9 +219,11 @@ if opt.tailor:
         tailor_str = 'Conv'
     elif opt.pde_const_emb:
         tailor_str = 'PDE_Const'
-writer = SummaryWriter(os.path.join(opt.log_dir,
+
+save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
-                                    f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}'))
+                                    f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
+writer = SummaryWriter(save_dir)
 if opt.tailor:
     max_tailor_steps = opt.num_inner_steps + 1
     custom_scalars = {
@@ -417,7 +419,7 @@ def restore_checkpoint(model, log_dir, device, best = False):
 start_epoch = 0
 
 if opt.reload_checkpoint:
-    restore_checkpoint(embedding, opt.model_path, torch.device("cuda") , opt.reload_best)
+    restore_checkpoint(embedding, save_dir, torch.device("cuda") , opt.reload_best)
 
 
 for epoch in range(start_epoch, opt.n_epochs):
@@ -482,11 +484,11 @@ for epoch in range(start_epoch, opt.n_epochs):
                 if opt.param_loss:
                     if  val_loss_min_tracker > val_param_loss / opt.num_val_batch:
                         val_loss_min_tracker = val_param_loss / opt.num_val_batch
-                        save_checkpoint(embedding,opt.model_path, True)
+                        save_checkpoint(embedding,save_dir, True)
                 else:
                     if  val_loss_min_tracker > val_loss / opt.num_val_batch:
                         val_loss_min_tracker = val_loss / opt.num_val_batch
-                        save_checkpoint(embedding,opt.model_path, True)
+                        save_checkpoint(embedding,save_dir, True)
 
 
             val_losses.append(val_loss / opt.num_val_batch)
@@ -566,7 +568,7 @@ for epoch in range(start_epoch, opt.n_epochs):
 
 
     if opt.save_checkpoint:
-        save_checkpoint(embedding,opt.model_path, False)
+        save_checkpoint(embedding,save_dir, False)
     
 
     train_losses.append(train_loss / opt.num_train_batch)

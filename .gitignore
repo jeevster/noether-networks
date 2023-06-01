@@ -2,6 +2,7 @@
 data/
 results/
 diffusion-reaction/
+results_summer/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
