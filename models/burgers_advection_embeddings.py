@@ -1,5 +1,5 @@
-import sys
-sys.path.append('/home/divyam123/noether_work/noether-networks/') 
+# import sys
+# sys.path.append('/home/divyam123/noether_work/noether-networks/') 
 
 import torch
 import torch.optim as optim
@@ -246,7 +246,7 @@ class ParameterNet(nn.Module):
 # stacked_data = torch.vstack(datas)
 # print("datas", stacked_data.shape)
 # torch.save(stacked_data, 'stacked_data.pt')
-# torch.save(params, 'params.pt')
+# # torch.save(params, 'params.pt')
 # params = torch.load('params.pt')
 # stacked_data = torch.load("stacked_data.pt")
 # print("params", params.shape)
