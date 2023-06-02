@@ -24,6 +24,7 @@ from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
 from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
+from models.burgers_advection_embeddings import OneDDBurgerEmbedding
 import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
@@ -316,10 +317,15 @@ if opt.conv_emb:
     print('initialized ConvConservedEmbedding')
 
 elif opt.pde_emb:
-    embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
-                                                in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
-    print('initialized Reaction Diffusion Embedding')
+    # embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
+    #                                             in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+    #                                             n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
+    # print('initialized Reaction Diffusion Embedding')
+    embedding = OneDDBurgerEmbedding(in_size=opt.image_width,
+                                    in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+                                    n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials).to(torch.cuda.current_device())
+
+
 elif opt.pde_const_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                 in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
@@ -409,18 +415,16 @@ def restore_checkpoint(model, log_dir, device, best = False):
         chosen_file = 'best_ckpt_model.pt' if best else 'ckpt_model.pt'
         checkpoint_path = os.path.join(log_dir, chosen_file)
         checkpoint = torch.load(checkpoint_path, map_location= device)
-        # print("checkpoint", )
         model.load_state_dict(checkpoint['model_state'])
 
 
 
-start_epoch = 0
 
 if opt.reload_checkpoint:
     restore_checkpoint(embedding, opt.model_path, torch.device("cuda") , opt.reload_best)
 
 
-for epoch in range(start_epoch, opt.n_epochs):
+for epoch in range(0, opt.n_epochs):
 
     print(f'Epoch {epoch} of {opt.n_epochs}')
     
