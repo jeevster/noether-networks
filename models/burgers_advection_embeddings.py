@@ -116,12 +116,12 @@ class OneDDBurgerEmbedding(torch.nn.Module):
         self.device = torch.cuda.current_device()
         self.num_learned_parameters = num_learned_parameters
         self.use_partials = use_partials
-        self.n_frames = n_frames if not self.use_partials else 6*n_frames #(5 partial derivatives + 1 solution field) =  6 
+        self.n_frames = n_frames if not self.use_partials else 4*n_frames #(3 partial derivatives + 1 solution field) =  4 
         self.data_root = data_root
         # param is either a network or a callable constant
         if learned:
             self.paramnet = ParameterNet(
-                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters).to(self.device)
+                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters, self.device).to(self.device)
         else:
             self.paramnet = ConstantLayer(1e-3)
         # initialize grid for finite differences
@@ -156,29 +156,32 @@ class OneDDBurgerEmbedding(torch.nn.Module):
 
         if return_partials:
             u_partials = torch.cat([data_x, data_xx, data_t], dim = 1)
+            u_partials = u_partials[:,:,None,:,:].to(self.device)
             return pde_residual, u_partials #keep u and v partials separate
         else:
             return pde_residual
 
     def forward(self, solution_field, true_params = None, return_params = False):
+        print("solution_field.shape 1", solution_field.shape)
         solution_field = solution_field.reshape(solution_field.shape[0],
                                                 int(solution_field.shape[1] /
                                                     self.in_channels), self.in_channels,
-                                                solution_field.shape[2], solution_field.shape[3])
+                                                solution_field.shape[2], 1).to(self.device)
 
         
 
-        u_stack = solution_field[:, :, 0]
-        u_stack = u_stack.permute((0,1,3,2))
+        u_stack = solution_field[:, :, 0].to(self.device)
+        # u_stack = u_stack.permute((0,1,3,2))
         print("u_stack", u_stack.shape)
 
         if true_params is not None:
             with torch.no_grad():
-                nu_true = true_params
+                nu_true = true_params[0]
                 true_residual, partials = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
 
-        print("entering parament")
-        input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
+        print("partials.shape",partials.shape,"solution_field.shape", solution_field.shape)
+        input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else u_stack
+        print('input_data',input_data.get_device())#, "self.paramnet.get_device()",self.paramnet.get_device())
         params = self.paramnet(input_data)
         nu = params[:, 0]
         
@@ -202,11 +205,11 @@ class OneDDBurgerEmbedding(torch.nn.Module):
 
 
 class ParameterNet(nn.Module):
-    def __init__(self, in_size, in_channels, hidden_channels, n_layers, num_learned_parameters):
+    def __init__(self, in_size, in_channels, hidden_channels, n_layers, num_learned_parameters, device):
         super(ParameterNet, self).__init__()
 
         self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
-                               in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers)
+                               in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers).to(device)
 
         self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
@@ -215,10 +218,10 @@ class ParameterNet(nn.Module):
                                          kernel_size=3, stride=1, padding=(2, 2)),
                                   nn.ReLU(),
                                   nn.MaxPool2d(4),
-                                  )
+                                  ).to(device)
 
         self.mlp = nn.Linear(
-            hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters)
+            hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).to(device)
 
     def forward(self, x):
         if len(x.shape) == 5:
@@ -230,7 +233,7 @@ class ParameterNet(nn.Module):
         return self.mlp(x)
 
 
-# loader = OneDAdvection_MultiParam('/data/nithinc/pdebench/advection', percent_train = 0.4)
+# loader = OneDBurgers_MultiParam('/data/nithinc/pdebench/burgers', percent_train = 0.4)
 # loader_len = loader.__len__()
 # datas = []
 # params = []
@@ -244,12 +247,12 @@ class ParameterNet(nn.Module):
 # print("datas", stacked_data.shape)
 # torch.save(stacked_data, 'stacked_data.pt')
 # torch.save(params, 'params.pt')
-params = torch.load('params.pt')
-stacked_data = torch.load("stacked_data.pt")
-print("params", params.shape)
-print("datas", stacked_data.shape)
+# params = torch.load('params.pt')
+# stacked_data = torch.load("stacked_data.pt")
+# print("params", params.shape)
+# print("datas", stacked_data.shape)
 
-embedding = OneDDBurgerEmbedding(in_size  = 64, in_channels = 1, n_frames = 1, 
-                                 hidden_channels = 20, n_layers = 4, data_root = '/data/nithinc/pdebench/advection', learned = False)
+# embedding = OneDDBurgerEmbedding(in_size  = 64, in_channels = 1, n_frames = 1, 
+#                                  hidden_channels = 20, n_layers = 4, data_root = '/data/nithinc/pdebench/burgers', learned = True)
 
-print(embedding(stacked_data, true_params = params, return_params =  True))
+# print(embedding(stacked_data, true_params = params, return_params =  True))
