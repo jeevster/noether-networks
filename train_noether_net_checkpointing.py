@@ -185,6 +185,10 @@ parser.add_argument('--reload_best_inner', action='store_true',
                     help='to reload best inner val. model')
 parser.add_argument('--reload_best_svg', action='store_true', 
                     help='to reload best svg val. model')
+parser.add_argument('--num_param_combinations', type=int,default=-1)
+parser.add_argument('--fixed_ic', action='store_true')
+parser.add_argument('--fixed_window', action='store_true')
+
 
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
