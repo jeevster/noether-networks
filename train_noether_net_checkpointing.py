@@ -168,6 +168,24 @@ parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
 
+parser.add_argument('--save_checkpoint', action='store_true', 
+                    help='to checkpoint models')
+parser.add_argument('--ckpt_outer_loss', action='store_true',
+                    help='to checkpoint best validation outer loss')
+parser.add_argument('--ckpt_inner_loss', action='store_true', 
+                    help='to checkpoint best validation inner loss')
+parser.add_argument('--ckpt_svg_loss', action='store_true', 
+                    help='to checkpoint best validation svg loss')
+
+parser.add_argument('--reload_latest', action='store_true', 
+                    help='to reload last checkpoint model')
+parser.add_argument('--reload_best_outer', action='store_true',
+                    help='to reload best outer val. model')
+parser.add_argument('--reload_best_inner', action='store_true', 
+                    help='to reload best inner val. model')
+parser.add_argument('--reload_best_svg', action='store_true', 
+                    help='to reload best svg val. model')
+
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
 
@@ -327,27 +345,31 @@ all_grad_norms = []
 all_emb_norms = []
 all_inner_lr_scales = []
 
-def save_checkpoint(model, log_dir, best_outer = False, best_inner = False):
-    file_name = ''
-    if best_outer == False and best_inner == False:
-        file_name = 'ckpt_model.pt'
-    elif best_outer == True and best_inner == False:
-        file_name = 'best_outer_val_ckpt_model.pt'
-    elif best_outer == True and best_inner == False:
-        file_name = 'best_inner_val_ckpt_model.pt'
-    torch.save({'model_state': model.state_dict()},'%s/%s' % (log_dir, file_name))
+def save_checkpoint(model, log_dir, best_outer = False, best_inner = False, best_svg = False):
+    chosen_file = ''
+    if best_outer == False and best_inner == False and best_svg == False:
+        chosen_file = 'ckpt_model.pt'
+    elif best_outer == True and best_inner == False and best_svg == False:
+        chosen_file = 'best_outer_val_ckpt_model.pt'
+    elif best_outer == False and best_inner == True and best_svg == False:
+        chosen_file = 'best_inner_val_ckpt_model.pt'
+    elif best_outer == False and best_inner == False and best_svg == True:
+        chosen_file = 'best_svg_val_ckpt_model.pt'
+    torch.save({'model_state': model.state_dict()},'%s/%s' % (log_dir, chosen_file))
 
 
-def restore_checkpoint(model, log_dir, device, best_outer = False, best_inner = False):
+def restore_checkpoint(model, log_dir, device, best_outer = False, best_inner = False, best_svg = False):
     if len(os.listdir(log_dir)) >= 2:
         
         chosen_file = ''
-        if best_outer == False and best_inner == False:
+        if best_outer == False and best_inner == False and best_svg == False:
             chosen_file = 'ckpt_model.pt'
-        elif best_outer == True and best_inner == False:
+        elif best_outer == True and best_inner == False and best_svg == False:
             chosen_file = 'best_outer_val_ckpt_model.pt'
-        elif best_outer == False and best_inner == True:
+        elif best_outer == False and best_inner == True and best_svg == False:
             chosen_file = 'best_inner_val_ckpt_model.pt'
+        elif best_outer == False and best_inner == False and best_svg == True:
+            chosen_file = 'best_svg_val_ckpt_model.pt'
         
         checkpoint_path = os.path.join(log_dir, chosen_file)
         checkpoint = torch.load(checkpoint_path, map_location= device)
@@ -429,13 +451,18 @@ for trial_num in range(opt.num_trials):
         # loading the best inner validation model
         elif opt.reload_best_outer:
 
-            restore_checkpoint(svg_model, save_dir, device = torch.device("cuda"), best_outer = True, best_inner = False)
+            restore_checkpoint(svg_model, save_dir, device = torch.device("cuda"), best_outer = True, best_inner = False, best_svg = False)
         
         # loading the best outer validation model
-        elif opt.reload_best_embedding:
+        elif opt.reload_best_inner:
 
-            restore_checkpoint(svg_model, save_dir, device = torch.device("cuda"), best_outer = False, best_inner = True)
+            restore_checkpoint(svg_model, save_dir, device = torch.device("cuda"), best_outer = False, best_inner = True, best_svg = False)
+        
+        # loading the best svg validation model
+        elif opt.reload_best_svg:
 
+            restore_checkpoint(svg_model, save_dir, device = torch.device("cuda"), best_outer = False, best_inner = False, best_svg = True)
+        # DG: no idea what this does
         else:
             svg_model = utils.modernize_model(opt.model_path, opt)
             print('\nOld SVG model with pre-trained weights loaded and modernized!')
@@ -526,6 +553,9 @@ for trial_num in range(opt.num_trials):
     grad_norms = []
     emb_norms = []
 
+    min_val_outer_loss = float('inf')
+    min_val_inner_loss = float('inf')
+    min_val_svg_loss = float('inf')
     # Quick sanity check to ensure float64
     for p in svg_model.named_parameters():
         assert p[
@@ -653,7 +683,20 @@ for trial_num in range(opt.num_trials):
             if opt.verbose:
                 print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
             writer.flush()
-
+        #checkpointing best val
+        if opt.save_checkpoint:
+            if opt.ckpt_outer_loss:
+                if  min_val_outer_loss > val_outer_losses[-1]:
+                    min_val_outer_loss = val_outer_losses[-1]
+                    save_checkpoint(embedding, save_dir, True, False, False)
+            if opt.ckpt_inner_loss:
+                if  min_val_inner_loss > val_inner_losses[-1]:
+                    min_val_inner_loss = val_inner_losses[-1]
+                    save_checkpoint(embedding, save_dir, False, True, False)        
+            if opt.ckpt_svg_loss:
+                if  min_val_svg_loss > val_svg_losses[-1]:
+                    min_val_svg_loss = val_svg_losses[-1]
+                    save_checkpoint(embedding, save_dir, False, False, True)    
         # Training
         print(f'Train {epoch} Epoch')
 
