@@ -4,7 +4,7 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.nn import Linear, Conv2d, ReLU
+from torch.nn import Linear, Conv2d, ReLU, Conv1d
 import torch.nn.functional as F
 from scipy.signal import convolve2d as convolve
 import contextlib
@@ -18,6 +18,7 @@ from os.path import join
 from functools import partial
 from models.nithin_embedding import reaction_diff_2d_residual_compute
 from models.cn import replace_cn_layers
+import pdb
 from data.oned_burger_advection import OneDBurgers_MultiParam,OneDAdvection_MultiParam
 import glob
 class ConservedEmbedding(nn.Module):
@@ -121,7 +122,9 @@ class OneDDBurgerEmbedding(torch.nn.Module):
         # param is either a network or a callable constant
         if learned:
             self.paramnet = ParameterNet(
-                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters, self.device).to(self.device)
+                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters, dimensions=1)
+            self.paramnet = self.paramnet.apply(lambda t: t.cuda())
+            # self.paramnet = self.paramnet.apply(lambda t: t.double())
         else:
             self.paramnet = ConstantLayer(1e-3)
         # initialize grid for finite differences
@@ -181,9 +184,13 @@ class OneDDBurgerEmbedding(torch.nn.Module):
 
         print("partials.shape",partials.shape,"solution_field.shape", solution_field.shape)
         input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else u_stack
-        print('input_data',input_data.get_device())#, "self.paramnet.get_device()",self.paramnet.get_device())
-        params = self.paramnet(input_data)
-        nu = params[:, 0]
+        input_data = input_data.to(torch.float64)
+        print('input_data',input_data.dtype)#, "self.paramnet.get_device()",self.paramnet.get_device())
+        input_data = input_data.double()
+        print("input_data", input_data.dtype)
+        # pdb.set_trace()
+        params = self.paramnet(input_data[:,:,0,:,0])
+        nu = params[:, 0].double()
         
         
         print("NU", nu.shape)
@@ -205,33 +212,59 @@ class OneDDBurgerEmbedding(torch.nn.Module):
 
 
 class ParameterNet(nn.Module):
-    def __init__(self, in_size, in_channels, hidden_channels, n_layers, num_learned_parameters, device):
+    def __init__(self, in_size, in_channels, hidden_channels, n_layers, num_learned_parameters, dimensions = 2):
         super(ParameterNet, self).__init__()
 
-        self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
-                               in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers).to(device)
 
-        self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
-                                  nn.ReLU(),
-                                  nn.MaxPool2d(4),
-                                  Conv2d(hidden_channels, hidden_channels,
-                                         kernel_size=3, stride=1, padding=(2, 2)),
-                                  nn.ReLU(),
-                                  nn.MaxPool2d(4),
-                                  ).to(device)
+        self.dimensions = dimensions
+        if self.dimensions == 2:
+            self.fno_encoder = FNO(n_modes=(16, 16), hidden_channels=hidden_channels,
+            in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers).double()
 
-        self.mlp = nn.Linear(
-            hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).to(device)
 
+            self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2).double()),
+            nn.ReLU().double(),
+            nn.MaxPool2d(4).double(),
+            Conv2d(hidden_channels, hidden_channels,
+            kernel_size=3, stride=1, padding=(2, 2)).double(),
+            nn.ReLU().double(),
+            nn.MaxPool2d(4).double(),
+            ).double()
+
+
+            self.mlp = nn.Linear(
+            hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).double()
+        elif self.dimensions == 1:
+            self.fno_encoder = FNO1d(n_modes_height = 16, hidden_channels = hidden_channels,
+            in_channels = in_channels, out_channels = hidden_channels, n_layers = n_layers).double()
+            self.fno_encoder = self.fno_encoder.apply(lambda t: t.double())
+            self.conv = nn.Sequential(Conv1d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=2),
+                        nn.ReLU(),
+                        nn.MaxPool1d(4),
+                        Conv1d(hidden_channels, hidden_channels,
+                        kernel_size=3, stride=1, padding=2),
+                        nn.ReLU(),
+                        nn.MaxPool1d(4),
+                        ).double()
+
+            self.mlp = nn.Linear(
+            hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).double()
     def forward(self, x):
-        if len(x.shape) == 5:
-            x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
+        if self.dimensions == 2:
+            if len(x.shape) == 5:
+                x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
-        x = self.fno_encoder(x)
-        x = self.conv(x)
-        x = torch.flatten(x, start_dim=1)
-        return self.mlp(x)
 
+            x = self.fno_encoder(x.float()).double()
+            x = self.conv(x).double()
+            x = torch.flatten(x, start_dim=1)
+            return self.mlp(x)
+        elif self.dimensions ==1 :
+            # print("inside dim 1")
+            x = self.fno_encoder(x)
+            x = self.conv(x)
+            x = torch.flatten(x, start_dim=1)
+            return self.mlp(x)
 
 # loader = OneDBurgers_MultiParam('/data/nithinc/pdebench/burgers', percent_train = 0.4)
 # loader_len = loader.__len__()

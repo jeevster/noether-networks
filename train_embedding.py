@@ -1,6 +1,6 @@
 import torch
 # This sets the default model weights to float64
-torch.set_default_dtype(torch.float64)  # nopep8
+# torch.set_default_dtype(torch.float64)  # nopep8
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import torch.optim as optim
@@ -367,10 +367,11 @@ grad_norms = []
 emb_norms = []
 
 # Quick sanity check to ensure float64
-# embedding = embedding.to(torch.float)
-# for p in embedding.named_parameters():
-    # assert p[
-        # 1].dtype == torch.float64, f'One of the embedding Model parameters is not float64! Parameter: {p[1]}'
+embedding = embedding.apply(lambda t: t.double())
+embedding = embedding.double()
+for p in embedding.named_parameters():
+    assert p[
+        1].dtype == torch.float64, f'One of the embedding Model parameters is not float64! Parameter: {p[1], print(p)}'
 
 print(f'starting at epoch 0')
 train_losses = []
@@ -378,24 +379,24 @@ train_true_losses = []
 val_losses = []
 val_true_losses = []
 
-train_du_losses = []
+train_nu_losses = []
 train_dv_losses = []
 train_k_losses = []
-train_du_means = []
+train_nu_means = []
 train_dv_means = []
 train_k_means = []
-train_du_vars = []
+train_nu_vars = []
 train_dv_vars = []
 train_k_vars = []
 train_param_losses = []
 
-val_du_losses = []
+val_nu_losses = []
 val_dv_losses = []
 val_k_losses = []
-val_du_means = []
+val_nu_means = []
 val_dv_means = []
 val_k_means = []
-val_du_vars = []
+val_nu_vars = []
 val_dv_vars = []
 val_k_vars = []
 val_param_losses = []
@@ -435,18 +436,18 @@ for epoch in range(0, opt.n_epochs):
         print(f'Validation {epoch} Epoch')
         val_loss = 0.
         val_true_loss = 0
-        val_du_loss = 0
-        val_dv_loss = 0
-        val_k_loss= 0
+        val_nu_loss = 0
+        # val_dv_loss = 0
+        # val_k_loss= 0
         val_param_loss = 0
 
-        val_du_mean = 0
-        val_dv_mean = 0
-        val_k_mean = 0
+        val_nu_mean = 0
+        # val_dv_mean = 0
+        # val_k_mean = 0
 
-        val_du_var = 0
-        val_dv_var = 0
-        val_k_var = 0
+        val_nu_var = 0
+        # val_dv_var = 0
+        # val_k_var = 0
         
 
         
@@ -457,22 +458,20 @@ for epoch in range(0, opt.n_epochs):
                 pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
                 val_loss += torch.abs(pde_value).log10().mean()
                 val_true_loss += torch.abs(true_pde_value).log10().mean()
-                k_pred, du_pred, dv_pred = pred_params
-                k, du, dv = params
-                du = du.to(torch.device("cuda"))
-                dv = dv.to(torch.device("cuda"))
-                k = k.to(torch.device("cuda"))
-                val_param_loss += (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
-                val_du_loss += ((du_pred - du).abs() / du).mean()
-                val_dv_loss += ((dv_pred - dv).abs() / dv).mean()
-                val_k_loss += ((k_pred - k).abs() / k).mean()
-                val_du_mean += du.mean()
-                val_dv_mean += dv.mean()
-                val_k_mean += k.mean()
+                nu_pred = pred_params[0]
+                nu = params[0]
+                nu = nu.to(torch.device("cuda"))
+                val_param_loss += (nu_pred - nu).pow(2).mean()
+                # val_du_loss += ((du_pred - du).abs() / du).mean()
+                # val_dv_loss += ((dv_pred - dv).abs() / dv).mean()
+                # val_k_loss += ((k_pred - k).abs() / k).mean()
+                # val_du_mean += du.mean()
+                # val_dv_mean += dv.mean()
+                # val_k_mean += k.mean()
 
-                val_du_var += du.var()
-                val_dv_var += dv.var()
-                val_k_var += k.var()
+                # val_du_var += du.var()
+                # val_dv_var += dv.var()
+                # val_k_var += k.var()
                 
             
             #step scheduler
@@ -495,15 +494,15 @@ for epoch in range(0, opt.n_epochs):
 
             val_losses.append(val_loss / opt.num_val_batch)
             val_true_losses.append(val_true_loss / opt.num_val_batch)
-            val_du_losses.append(val_du_loss / opt.num_val_batch)
-            val_dv_losses.append(val_dv_loss / opt.num_val_batch)
-            val_k_losses.append(val_k_loss / opt.num_val_batch)
-            val_du_means.append(val_du_mean / opt.num_val_batch)
-            val_dv_means.append(val_dv_mean / opt.num_val_batch)
-            val_k_means.append(val_k_mean / opt.num_val_batch)
-            val_du_vars.append(val_du_var / opt.num_val_batch)
-            val_dv_vars.append(val_dv_var / opt.num_val_batch)
-            val_k_vars.append(val_k_var / opt.num_val_batch)
+            val_nu_losses.append(val_nu_loss / opt.num_val_batch)
+            # val_dv_losses.append(val_dv_loss / opt.num_val_batch)
+            # val_k_losses.append(val_k_loss / opt.num_val_batch)
+            val_nu_means.append(val_nu_mean / opt.num_val_batch)
+            # val_dv_means.append(val_dv_mean / opt.num_val_batch)
+            # val_k_means.append(val_k_mean / opt.num_val_batch)
+            val_nu_vars.append(val_nu_var / opt.num_val_batch)
+            # val_dv_vars.append(val_dv_var / opt.num_val_batch)
+            # val_k_v/ars.append(val_k_var / opt.num_val_batch)
             val_param_losses.append(val_param_loss / opt.num_val_batch )
 
 
@@ -513,16 +512,16 @@ for epoch in range(0, opt.n_epochs):
     print(f'Train {epoch} Epoch')
     train_loss = 0.
     train_true_loss = 0
-    train_du_loss = 0
+    train_nu_loss = 0
     train_dv_loss = 0
     train_k_loss= 0
     train_param_loss =0
 
-    train_du_mean = 0
+    train_nu_mean = 0
     train_dv_mean = 0
     train_k_mean = 0
 
-    train_du_var = 0
+    train_nu_var = 0
     train_dv_var = 0
     train_k_var = 0
     
@@ -539,17 +538,17 @@ for epoch in range(0, opt.n_epochs):
         
         train_loss+=loss
         train_true_loss +=true_loss
-        k_pred, du_pred, dv_pred = pred_params
-        k, du, dv = params
-        du = du.to(torch.device("cuda"))
-        dv = dv.to(torch.device("cuda"))
-        k = k.to(torch.device("cuda"))
-        train_du_loss += ((du_pred - du).abs() / du).mean()
-        train_dv_loss += ((dv_pred - dv).abs() / dv).mean()
-        train_k_loss += ((k_pred - k).abs() / k).mean()
+        nu_pred = pred_params[0]
+        nu = params[0]
+        nu = nu.to(torch.device("cuda"))
+        # dv = dv.to(torch.device("cuda"))
+        # k = k.to(torch.device("cuda"))
+        train_nu_loss += ((nu_pred - nu).abs() / nu).mean()
+        # train_dv_loss += ((dv_pred - dv).abs() / dv).mean()
+        # train_k_loss += ((k_pred - k).abs() / k).mean()
         #train to match params
         
-        param_loss = (du_pred - du).pow(2).mean() + (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
+        param_loss = (nu_pred - nu).pow(2).mean() #+ (dv_pred - dv).pow(2).mean() + (k_pred - k).pow(2).mean()
         if opt.param_loss:
             param_loss.backward()
         else:
@@ -560,13 +559,13 @@ for epoch in range(0, opt.n_epochs):
         
         train_param_loss+=param_loss
 
-        train_du_mean += du.mean()
-        train_dv_mean += dv.mean()
-        train_k_mean += k.mean()
+        train_nu_mean += nu.mean()
+        # train_dv_mean += dv.mean()
+        # train_k_mean += k.mean()
 
-        train_du_var += du.var()
-        train_dv_var += dv.var()
-        train_k_var += k.var()
+        train_nu_var += nu.var()
+        # train_dv_var += dv.var()
+        # train_k_var += k.var()
 
 
     if opt.save_checkpoint:
@@ -575,50 +574,50 @@ for epoch in range(0, opt.n_epochs):
 
     train_losses.append(train_loss / opt.num_train_batch)
     train_true_losses.append(train_true_loss / opt.num_train_batch)
-    train_du_losses.append(train_du_loss / opt.num_train_batch)
+    train_nu_losses.append(train_nu_loss / opt.num_train_batch)
     train_dv_losses.append(train_dv_loss / opt.num_train_batch)
     train_k_losses.append(train_k_loss / opt.num_train_batch)
-    train_du_means.append(train_du_mean / opt.num_train_batch)
-    train_dv_means.append(train_dv_mean / opt.num_train_batch)
-    train_k_means.append(train_k_mean / opt.num_train_batch)
-    train_du_vars.append(train_du_var / opt.num_train_batch)
-    train_dv_vars.append(train_dv_var / opt.num_train_batch)
-    train_k_vars.append(train_k_var / opt.num_train_batch)
+    train_nu_means.append(train_nu_mean / opt.num_train_batch)
+    # train_dv_means.append(train_dv_mean / opt.num_train_batch)
+    # train_k_means.append(train_k_mean / opt.num_train_batch)
+    train_nu_vars.append(train_nu_var / opt.num_train_batch)
+    # train_dv_vars.append(train_dv_var / opt.num_train_batch)
+    # train_k_vars.append(train_k_var / opt.num_train_batch)
     train_param_losses.append(train_param_loss / opt.num_train_batch)
     print("Train PDE Loss: ", train_loss / opt.num_train_batch)
     
     #write to tensorboard
     writer.add_scalar('val_log_pde_loss', val_losses[-1],(epoch + 1))
     writer.add_scalar('val_log_true_pde_loss', val_true_losses[-1],(epoch + 1))
-    writer.add_scalar('val_du_loss', val_du_losses[-1],(epoch + 1))
-    writer.add_scalar('val_dv_loss', val_dv_losses[-1],(epoch + 1))
-    writer.add_scalar('val_k_loss', val_k_losses[-1],(epoch + 1))
+    writer.add_scalar('val_du_loss', val_nu_losses[-1],(epoch + 1))
+    # writer.add_scalar('val_dv_loss', val_dv_losses[-1],(epoch + 1))
+    # writer.add_scalar('val_k_loss', val_k_losses[-1],(epoch + 1))
     writer.add_scalar('val_param_loss', val_param_losses[-1],(epoch + 1))
 
 
 
-    writer.add_scalar('val_du_mean', val_du_means[-1],(epoch + 1))
-    writer.add_scalar('val_dv_mean', val_dv_means[-1],(epoch + 1))
-    writer.add_scalar('val_k_mean', val_k_means[-1],(epoch + 1))
-    writer.add_scalar('val_du_var', val_du_vars[-1],(epoch + 1))
-    writer.add_scalar('val_dv_var', val_dv_vars[-1],(epoch + 1))
-    writer.add_scalar('val_k_var', val_k_vars[-1],(epoch + 1))
+    writer.add_scalar('val_du_mean', val_nu_means[-1],(epoch + 1))
+    # writer.add_scalar('val_dv_mean', val_dv_means[-1],(epoch + 1))
+    # writer.add_scalar('val_k_mean', val_k_means[-1],(epoch + 1))
+    writer.add_scalar('val_du_var', val_nu_vars[-1],(epoch + 1))
+    # writer.add_scalar('val_dv_var', val_dv_vars[-1],(epoch + 1))
+    # writer.add_scalar('val_k_var', val_k_vars[-1],(epoch + 1))
 
 
     writer.add_scalar('train_log_pde_loss', train_losses[-1],(epoch + 1))
     writer.add_scalar('train_log_true_pde_loss', train_true_losses[-1],(epoch + 1))
-    writer.add_scalar('train_du_loss', train_du_losses[-1],(epoch + 1))
-    writer.add_scalar('train_dv_loss', train_dv_losses[-1],(epoch + 1))
-    writer.add_scalar('train_k_loss', train_k_losses[-1],(epoch + 1))
+    writer.add_scalar('train_nu_loss', train_nu_losses[-1],(epoch + 1))
+    # writer.add_scalar('train_dv_loss', train_dv_losses[-1],(epoch + 1))
+    # writer.add_scalar('train_k_loss', train_k_losses[-1],(epoch + 1))
     writer.add_scalar('train_param_loss', train_param_losses[-1],(epoch + 1))
 
 
-    writer.add_scalar('train_du_mean', train_du_means[-1],(epoch + 1))
-    writer.add_scalar('train_dv_mean', train_dv_means[-1],(epoch + 1))
-    writer.add_scalar('train_k_mean', train_k_means[-1],(epoch + 1))
-    writer.add_scalar('train_du_var', train_du_vars[-1],(epoch + 1))
-    writer.add_scalar('train_dv_var', train_dv_vars[-1],(epoch + 1))
-    writer.add_scalar('train_k_var', train_k_vars[-1],(epoch + 1))
+    writer.add_scalar('train_nu_mean', train_nu_means[-1],(epoch + 1))
+    # writer.add_scalar('train_dv_mean', train_dv_means[-1],(epoch + 1))
+    # writer.add_scalar('train_k_mean', train_k_means[-1],(epoch + 1))
+    writer.add_scalar('train_nu_var', train_nu_vars[-1],(epoch + 1))
+    # writer.add_scalar('train_dv_var', train_dv_vars[-1],(epoch + 1))
+    # writer.add_scalar('train_k_var', train_k_vars[-1],(epoch + 1))
 
 
 hyperparameters = {
