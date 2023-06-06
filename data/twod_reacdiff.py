@@ -145,7 +145,6 @@ class TwoDReacDiff_MultiParam(object):
         except:
             vid = torch.Tensor(np.array(h5_file[f"{seq}/data"], dtype="f")).to(torch.cuda.current_device())
 
-
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
         start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
         vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2))
@@ -153,6 +152,6 @@ class TwoDReacDiff_MultiParam(object):
         if self.frame_step > 1:
             vid = vid[::self.frame_step]  # only take the video frames
         #return video and parameters
-        return vid.reshape(-1, self.image_size, self.image_size), (k, du, dv)
+        return vid.reshape(-1, 2, self.image_size, self.image_size), (k, du, dv)
 
 

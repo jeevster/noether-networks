@@ -15,46 +15,57 @@ from models.cn import replace_cn_layers, load_cached_cn_modules, cache_cn_module
 from utils import svg_crit
 
 
-def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None):
+def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None):
     # compute embeddings for sequence
+    #TODO: allow for arbitrary number of embedding frames
     if num_emb_frames == 1:
-        embs = [fmodel(frame, mode='emb') for frame in gen_seq]
+        embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in gen_seq]
     elif num_emb_frames == 2:
         # TODO: verify exact number of frames coming in
         stacked_gen_seq = []
         for i in range(1, len(gen_seq)):
             stacked_gen_seq.append(
                 torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
-        embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]
-        
+        embs = [fmodel(frame,true_params = true_params, mode='emb')[0] for frame in stacked_gen_seq]
         assert(len(embs) == len(gen_seq) - 1)
-        if setting == 'eval':
-            val_inner_lr = opt.inner_lr
-            if opt.val_inner_lr != -1:
-                val_inner_lr = opt.val_inner_lr
-            _embs = torch.stack([i.detach() for i in embs])
-            experiment_id = opt.model_path.split('/')[-2]
-            baseline_fname = f'eval_metrics/genseq_{experiment_id}'
-            if val_inner_lr > 0 and opt.num_inner_steps > 0:
-                baseline_fname += f'-lr{val_inner_lr}'
-                baseline_fname += f'-steps{opt.num_inner_steps}'
-            baseline_fname += '.npy'
-            _gen_seq = gen_seq
-            if torch.is_tensor(_gen_seq):
-                _gen_seq = _gen_seq.detach().cpu().numpy()
-            elif isinstance(_gen_seq, list):
-                _gen_seq = torch.stack([i.detach()
-                                       for i in _gen_seq]).cpu().numpy()
-            np.save(baseline_fname, np.asarray(_gen_seq))
+    elif num_emb_frames == 10:
+        assert(len(gen_seq) >= 10)
+        stacked_gen_seq = []
+        for i in range(10, len(gen_seq)):
+            stacked_gen_seq.append(
+                torch.cat([g for g in gen_seq[i-10:i]], dim=1))
+        embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in stacked_gen_seq]
+        assert(len(embs) == len(gen_seq) - 10)
 
-            baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
-            if val_inner_lr > 0 and opt.num_inner_steps > 0:
-                baseline_fname += f'-lr{val_inner_lr}'
-                baseline_fname += f'-steps{opt.num_inner_steps}'
-            baseline_fname += '.npy'
-            np.save(baseline_fname, _embs.cpu().numpy())
     else:
         raise ValueError
+
+    if setting == 'eval':
+        val_inner_lr = opt.inner_lr
+        if opt.val_inner_lr != -1:
+            val_inner_lr = opt.val_inner_lr
+        _embs = torch.stack([i.detach() for i in embs])
+        experiment_id = opt.model_path.split('/')[-2]
+        baseline_fname = f'eval_metrics/genseq_{experiment_id}'
+        if val_inner_lr > 0 and opt.num_inner_steps > 0:
+            baseline_fname += f'-lr{val_inner_lr}'
+            baseline_fname += f'-steps{opt.num_inner_steps}'
+        baseline_fname += '.npy'
+        _gen_seq = gen_seq
+        if torch.is_tensor(_gen_seq):
+            _gen_seq = _gen_seq.detach().cpu().numpy()
+        elif isinstance(_gen_seq, list):
+            _gen_seq = torch.stack([i.detach()
+                                    for i in _gen_seq]).cpu().numpy()
+        np.save(baseline_fname, np.asarray(_gen_seq))
+
+        baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
+        if val_inner_lr > 0 and opt.num_inner_steps > 0:
+            baseline_fname += f'-lr{val_inner_lr}'
+            baseline_fname += f'-steps{opt.num_inner_steps}'
+        baseline_fname += '.npy'
+        np.save(baseline_fname, _embs.cpu().numpy())
+    
     if mode == 'mse':
         # we penalize the pairwise losses
         if compare_to == 'prev':
@@ -83,7 +94,7 @@ def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev',
     return torch.sum(pairwise_inner_losses, dim=0)
 
 
-def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], posterior_epses=[]):
+def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_epses=[], posterior_epses=[]):
     mus, logvars, mu_ps, logvar_ps = [], [], [], []
     if 'Basic' not in type(func_model).__name__:
         if getattr(func_model.frame_predictor, 'init_hidden', None) is not None:
@@ -103,7 +114,6 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     for i in range(opt.n_past, int(opt.n_eval/opt.frame_step)):
         # TODO: different mode for training, where we get frames for more than just conditioning?
         if mode == 'eval':
-            import pdb; pdb.set_trace()
             gt = None if i >= opt.n_eval else gt_seq[i]
             # TODO: the following line causes issues, is there an elegant way to do stop grad?
             # x_in = gen_seq[-1].clone().detach()
@@ -138,7 +148,7 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
         # predict
         x_hat, mu, logvar, mu_p, logvar_p, skip = func_model(
             x_in,
-            gt, skip, opt,
+            gt, true_params, skip, opt,
             i=i, mode=mode,
             prior_eps=prior_eps,
             posterior_eps=posterior_eps,
@@ -165,7 +175,7 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     return gen_seq, mus, logvars, mu_ps, logvar_ps
 
 
-def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', **kwargs):
+def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='eval', **kwargs):
     '''
     Perform a round of tailoring.
     '''
@@ -245,12 +255,12 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
                 # print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
 
                 # autoregressive rollout
-                gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
+                gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
                                                                              prior_epses=prior_epses,
                                                                              posterior_epses=posterior_epses,
                                                                              )
                 # compute Noether loss
-                tailor_loss = inner_crit(fmodel, gen_seq, mode=inner_crit_mode,
+                tailor_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
                                          num_emb_frames=opt.num_emb_frames,
                                          compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
 
@@ -309,14 +319,14 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
             posterior_epses = []
 
         # generate the final model prediction with the tailored weights
-        final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, opt, mode=mode,
+        final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
                                                                            prior_epses=prior_epses,
                                                                            posterior_epses=posterior_epses,
                                                                            )
 
         # track metrics
         if opt.tailor:
-            tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
+            tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
                                      compare_to=opt.inner_crit_compare_to).detach()
             tailor_losses.append(tailor_loss.mean().cpu().item())
@@ -353,7 +363,7 @@ def tailor_many_steps(svg_model, x, opt, track_higher_grads=True, mode='eval', *
                                 mu_ps, logvar_ps, opt).detach().cpu().item()
             svg_losses.append(svg_loss)
 
-            tailor_loss = inner_crit(fmodel, final_gen_seq, mode=inner_crit_mode,
+            tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
                                      compare_to=opt.inner_crit_compare_to).detach()
             tailor_losses.append(tailor_loss.mean().detach().cpu().item())

@@ -13,7 +13,7 @@ class SVGModel(nn.Module):
         self.posterior = posterior
         self.emb = emb
 
-    def forward(self, x_in, gt=None, skip=None, opt=None, i=None, mode='eval', prior_eps=[None], posterior_eps=[None]):
+    def forward(self, x_in, gt=None, true_params = None, skip=None, opt=None, i=None, mode='eval', prior_eps=[None], posterior_eps=[None]):
         '''
         Perform a forward pass of either the SVG model or the embedding layer
 
@@ -69,5 +69,6 @@ class SVGModel(nn.Module):
             return x_hat, mu, logvar, mu_p, logvar_p, skip
 
         elif mode == 'emb':
-            return self.emb(x_in)
+            assert (true_params is not None)
+            return self.emb(x_in, true_params = true_params)
         raise NotImplementedError('please use either "svg" or "emb" mode')

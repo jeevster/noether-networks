@@ -152,16 +152,16 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
                                                     self.in_channels), self.in_channels,
                                                 solution_field.shape[2], solution_field.shape[3])
 
-        
-
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
 
         if true_params is not None:
             with torch.no_grad():
                 k_true, Du_true, Dv_true = true_params
-                true_residual, partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true, return_partials = True)
-
+                true_residual, partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true, compute_residual = True, return_partials = True)
+        else:
+            with torch.no_grad():
+                partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, None, None, None, compute_residual = False, return_partials = True)
         #predict params using network
         input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
         params = self.paramnet(input_data)
@@ -169,11 +169,9 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #extract predicted params
         k = params[:, 0]
         #set Du and/or Du to their true values if not learnable
-        try:
-            Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
-            Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
-        except:
-            RuntimeError("Some parameters declared as not learnable but true parameters not provided")
+        
+        Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
+        Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
         
         #compute PDE residual
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)

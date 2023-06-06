@@ -10,12 +10,12 @@ python train_noether_net_checkpointing.py \
 --dataset 2d_reacdiff_multiparam \
 --data_root $DATADIR \
 --num_trials 1 \
---n_past 2 \
+--n_past 10 \
 --n_future 2 \
 --num_threads 0 \
 --ckpt_every 10 \
 --inner_crit_mode mse \
---inner_crit_compare_to prev \
+--inner_crit_compare_to pde_zero \
 --enc_dec_type vgg \
 --emb_type conserved \
 --num_epochs_per_val 1 \

@@ -35,6 +35,7 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--train_noether', default=True, type=bool, help='dummy flag indicating we are training the joint noether model. DO NOT CHANGE')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 parser.add_argument('--data_root', default='data',
                     help='root directory for data')
@@ -277,7 +278,7 @@ test_loader = DataLoader(test_data,
 def get_batch_generator(data_loader):
     while True:
         for (data, params) in data_loader:
-            batch = torch.stack(utils.normalize_data(opt, dtype, data), dim =1)
+            batch = utils.normalize_data(opt, dtype, data)
             yield batch, params
 
 
@@ -414,20 +415,24 @@ for trial_num in range(opt.num_trials):
         if opt.conv_emb:
             embedding = ConvConservedEmbedding(image_width=opt.image_width,
                                                 nc=opt.num_emb_frames * opt.channels)
+            print('initialized Convolutional ConservedEmbedding')
         elif opt.pde_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                         in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
                                                         n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
+            print('initialized Learnable PDE ConservedEmbedding')
+
         elif opt.pde_const_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                         in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
                                                         n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
+            print('initialized Constant PDE ConservedEmbedding')
         else:
             # embedding model
             embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,
                                             nc=opt.num_emb_frames * opt.channels)
 
-        print('initialized ConservedEmbedding')
+            print('initialized ConservedEmbedding')
 
         # In the case where we don't do tailoring, we can drop the embedding
         embedding = nn.Identity() if not opt.tailor else embedding
@@ -574,7 +579,7 @@ for trial_num in range(opt.num_trials):
 
             for batch_num in tqdm(range(opt.num_val_batch)):
                 batch, params = next(testing_batch_generator)
-                # params = tuple([param.to(torch.device("cuda")) for param in params])
+                params = tuple([param.to(torch.device("cuda")) for param in params])
                 # pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
                 with torch.no_grad():
                     # we optionally evaluate a baseline (untailored) model for comparison
@@ -604,7 +609,7 @@ for trial_num in range(opt.num_trials):
                     # Tailor many steps uses opt.tailor to decide whether to tailor or not
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                         # no need for higher grads in val
-                        svg_model, batch, opt=opt, track_higher_grads=False,
+                        svg_model, batch, params, opt=opt, track_higher_grads=False,
                         mode='eval',
                         # extra kwargs
                         tailor_losses=val_batch_inner_losses,
@@ -692,8 +697,8 @@ for trial_num in range(opt.num_trials):
         print(f'Train {epoch} Epoch')
 
         for batch_num in tqdm(range(opt.num_train_batch)):
-            batch = next(training_batch_generator)
-
+            batch, params = next(training_batch_generator)
+            params = tuple([param.to(torch.device("cuda")) for param in params])
             train_mode = 'eval' if opt.no_teacher_force else 'train'
             # tailoring pass
             cached_cn = [None]  # cached cn params
@@ -704,7 +709,7 @@ for trial_num in range(opt.num_trials):
                 # rollout, tailoring, rollout
                 # Again, tailor_many_steps uses opt.tailor to decide whether to tailor or not
                 gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
-                    svg_model, batch, opt=opt, track_higher_grads=True,
+                    svg_model, batch, params, opt=opt, track_higher_grads=True,
                     mode=train_mode,
                     # extra kwargs
                     tailor_losses=batch_inner_losses,

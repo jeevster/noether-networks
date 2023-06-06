@@ -35,6 +35,7 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 parser.add_argument('--data_root', default='data',
                     help='root directory for data')
