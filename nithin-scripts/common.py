@@ -28,7 +28,7 @@ class ReactionDiff2D:
         eqn2 = dv * v_xx + dv * v_yy + rv - v_t
         return np.abs(eqn1) + np.abs(eqn2)
     
-    @jax.jit
+    # @jax.jit
     @classmethod
     def residual_jax(u, v, u_partials, v_partials, k, du, dv):
             u_x, u_y, u_xx, u_yy, u_t = u_partials
@@ -101,3 +101,14 @@ class ReactionDiff2D:
         plt.savefig(os.path.join(save_dir, f'{param}_noise.png'))
         plt.clf()
 
+class Advection:
+
+    def plot(data, x, t, beta, seed, savedir):
+        """Plots a solution field of the advection equation. Data is a numpy array of shape (n_t, n_x)"""
+        plt.imshow(data, origin='lower', extent=[x[0], x[-1], t[0], t[-1]], aspect='auto', cmap='RdBu')
+        plt.colorbar()
+        plt.xlabel('x')
+        plt.ylabel('t')
+        plt.title(f'beta = {beta} seed = {seed}')
+        plt.savefig(savedir + f'/seed={seed}.png')
+        plt.clf()

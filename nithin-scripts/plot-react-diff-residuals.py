@@ -16,7 +16,7 @@ def main():
     os.makedirs(args.plotdir, exist_ok=True)
     plotdir = args.plotdir
     datadir = args.data
-    parameter_combos = [f for f in os.listdir(datadir) if os.path.isdir(os.path.join(datadir, f)) and f.endswith('.h5')]
+    parameter_combos = [f for f in os.listdir(datadir) if os.path.isfile(os.path.join(datadir, f)) and f.endswith('.h5')]
     for f in parameter_combos:
         residuals = []
         d = h.File(os.path.join('./../', f))
