@@ -131,7 +131,7 @@ class TwoDReacDiff_MultiParam(object):
         #file = np.random.randint(len(self.seqs))
         file = index
         seqs = self.seqs[file] # choose a file (i.e parameter value) from 1372 possibilies
-
+        
         seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
 
         h5_file = self.h5_files[file]

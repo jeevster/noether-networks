@@ -121,7 +121,7 @@ parser.add_argument('--num_emb_frames', type=int, default=2,
 parser.add_argument('--horiz_flip', action='store_true',
                     help='randomly flip phys101 sequences horizontally (p=.5)?')
 parser.add_argument('--train_set_length', type=int,
-                    default=256, help='size of training set')
+                    default=-1, help='size of training set')
 parser.add_argument('--test_set_length', type=int,
                     default=-1, help='size of test set')
 parser.add_argument('--baseline', action='store_true',
@@ -167,7 +167,10 @@ parser.add_argument('--pde_const_emb', action='store_true',
 parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
-
+parser.add_argument('--use_partials', action = 'store_true',
+                    help='input partial derivatives into embedding model in addition to solution field')
+parser.add_argument('--num_learned_parameters', type=int, default=3,
+                    help='number of parameters to learn in PDE embedding')
 parser.add_argument('--save_checkpoint', action='store_true', 
                     help='to checkpoint models')
 parser.add_argument('--ckpt_outer_loss', action='store_true',
@@ -273,15 +276,9 @@ test_loader = DataLoader(test_data,
 
 def get_batch_generator(data_loader):
     while True:
-        for sequence in data_loader:
-            if not opt.use_action:
-                batch = utils.normalize_data(opt, dtype, sequence)
-                yield batch
-            else:
-                images, actions = sequence
-                images = utils.normalize_data(opt, dtype, images)
-                actions = utils.sequence_input(actions.transpose_(0, 1), dtype)
-                yield images, actions
+        for (data, params) in data_loader:
+            batch = torch.stack(utils.normalize_data(opt, dtype, data), dim =1)
+            yield batch, params
 
 
 training_batch_generator = get_batch_generator(train_loader)
@@ -414,30 +411,23 @@ for trial_num in range(opt.num_trials):
         # decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         # encoder.apply(utils.init_weights)
         # decoder.apply(utils.init_weights)
-        if opt.encoder_emb:
-            embedding = EncoderEmbedding(encoder, opt.emb_dim, opt.image_width,
-                                         nc=opt.channels, num_emb_frames=opt.num_emb_frames,
-                                         batch_size=opt.batch_size)
-        elif opt.conv_emb:
+        if opt.conv_emb:
             embedding = ConvConservedEmbedding(image_width=opt.image_width,
-                                               nc=opt.num_emb_frames * opt.channels)
-            print('initialized ConvConservedEmbedding')
-
+                                                nc=opt.num_emb_frames * opt.channels)
         elif opt.pde_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
-                                                       in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                       n_layers=opt.fno_layers, data_root=opt.data_root, learned=True)
-            print('initialized Reaction Diffusion Embedding')
+                                                        in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+                                                        n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
         elif opt.pde_const_emb:
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
-                                                       in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                       n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
+                                                        in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+                                                        n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
         else:
             # embedding model
             embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,
-                                           nc=opt.num_emb_frames * opt.channels)
+                                            nc=opt.num_emb_frames * opt.channels)
 
-            print('initialized ConservedEmbedding')
+        print('initialized ConservedEmbedding')
 
         # In the case where we don't do tailoring, we can drop the embedding
         embedding = nn.Identity() if not opt.tailor else embedding
@@ -481,25 +471,21 @@ for trial_num in range(opt.num_trials):
         print('replacing batch norm layers with group norm')
         svg_model = utils.batch_norm_to_group_norm(svg_model)
 
+    #load pretrained embedding model
     if opt.warmstart_emb_path != '':
         emb_ckpt = torch.load(opt.warmstart_emb_path)
-        if 'emb' in emb_ckpt.keys():
-            svg_model.emb = emb_ckpt['emb']
-            print(
-                f'loading pretrained embedding from {opt.warmstart_emb_path}')
-        else:
-            print(f'embedding ckpt path given but no embedding found...')
+        svg_model.emb.load_state_dict(emb_ckpt['model_state'])
 
     svg_model.apply(lambda t: t.cuda())
-    print('Eval summary')
-    summary(svg_model.frame_predictor, input_size=(1, opt.n_past*opt.channels, opt.image_width,
-            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"),  mode='eval')
-    print('Train summary')
-    summary(svg_model, input_size=(1, opt.n_past*opt.channels, opt.image_width,
-            opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
-    print('Emb summary')
-    #summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
-    summary(svg_model.emb, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
+    # print('Eval summary')
+    # summary(svg_model.frame_predictor, input_size=(1, opt.n_past*opt.channels, opt.image_width,
+    #         opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"),  mode='eval')
+    # print('Train summary')
+    # summary(svg_model, input_size=(1, opt.n_past*opt.channels, opt.image_width,
+    #         opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"), opt=opt, mode='train', i=opt.n_past+2)
+    # print('Emb summary')
+    # #summary(svg_model.emb, input_size=(opt.n_past, opt.channels, opt.image_width, opt.image_width), device=torch.device("cuda"))
+    # summary(svg_model.emb, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
     # For comparing later
     old_state_dict = copy.deepcopy(svg_model.state_dict())
     if opt.baseline:
@@ -587,8 +573,9 @@ for trial_num in range(opt.num_trials):
             svg_model.eval()
 
             for batch_num in tqdm(range(opt.num_val_batch)):
-                batch = next(testing_batch_generator)
-
+                batch, params = next(testing_batch_generator)
+                # params = tuple([param.to(torch.device("cuda")) for param in params])
+                # pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
                 with torch.no_grad():
                     # we optionally evaluate a baseline (untailored) model for comparison
                     prior_epses = []

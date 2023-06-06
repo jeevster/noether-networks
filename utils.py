@@ -158,7 +158,6 @@ def load_dataset(opt):
         frame_step = 1
         if hasattr(opt, 'frame_step'):
             frame_step = opt.frame_step
-
         train_data = TwoDReacDiff_MultiParam(
             data_root=opt.data_root,
             train=True,

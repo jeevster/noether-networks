@@ -103,6 +103,7 @@ def predict_many_steps(func_model, gt_seq, opt, mode='eval', prior_epses=[], pos
     for i in range(opt.n_past, int(opt.n_eval/opt.frame_step)):
         # TODO: different mode for training, where we get frames for more than just conditioning?
         if mode == 'eval':
+            import pdb; pdb.set_trace()
             gt = None if i >= opt.n_eval else gt_seq[i]
             # TODO: the following line causes issues, is there an elegant way to do stop grad?
             # x_in = gen_seq[-1].clone().detach()

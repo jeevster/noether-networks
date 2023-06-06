@@ -309,9 +309,7 @@ all_inner_lr_scales = []
 
 # --------- meta-training loop ------------------------------------
 # usually only do one trial -- a trial is basically a run through the
-# entire meta-training loop
-
-        
+# entire meta-training loop      
 if opt.conv_emb:
     embedding = ConvConservedEmbedding(image_width=opt.image_width,
                                         nc=opt.num_emb_frames * opt.channels)
