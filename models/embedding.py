@@ -147,11 +147,10 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
 
     # 2D reaction diffusion
     def forward(self, solution_field, true_params = None, return_params = False):
-        solution_field = solution_field.reshape(solution_field.shape[0],
-                                                int(solution_field.shape[1] /
-                                                    self.in_channels), self.in_channels,
-                                                solution_field.shape[2], solution_field.shape[3])
-
+        # solution_field = solution_field.reshape(solution_field.shape[0],
+        #                                         int(solution_field.shape[1] /
+        #                                             self.in_channels), self.in_channels,
+        #                                         solution_field.shape[2], solution_field.shape[3])
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
 

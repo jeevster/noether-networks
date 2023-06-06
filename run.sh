@@ -39,11 +39,10 @@ python train_embedding.py \
 --num_emb_frames 10 \
 --horiz_flip \
 --reuse_lstm_eps \
---num_learned_parameters 3 \
+--num_learned_parameters 1 \
 --use_partials \
 --save_checkpoint \
---param_loss \
---log_dir ./results_summer/paramloss_learnall_lr1e-3_bs16_use_partials_fixedpderesidual_fno4layers_width256/ \
+--log_dir ./results_summer/TEST/ \
 --channels 2 \
 --tailor \
 --random_weights \

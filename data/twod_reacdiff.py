@@ -151,7 +151,7 @@ class TwoDReacDiff_MultiParam(object):
         
         if self.frame_step > 1:
             vid = vid[::self.frame_step]  # only take the video frames
-        #return video and parameters
+        #return video and parameters    
         return vid.reshape(-1, 2, self.image_size, self.image_size), (k, du, dv)
 
 
