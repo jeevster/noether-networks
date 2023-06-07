@@ -17,27 +17,16 @@ from utils import svg_crit
 
 def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None):
     # compute embeddings for sequence
-    #TODO: allow for arbitrary number of embedding frames
     if num_emb_frames == 1:
         embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in gen_seq]
-    elif num_emb_frames == 2:
-        # TODO: verify exact number of frames coming in
+    elif num_emb_frames >1:
+        assert(len(gen_seq) >= num_emb_frames)
         stacked_gen_seq = []
-        for i in range(1, len(gen_seq)):
+        for i in range(num_emb_frames, len(gen_seq)):
             stacked_gen_seq.append(
-                torch.stack((gen_seq[i-1], gen_seq[i]), dim=1))
-        embs = [fmodel(frame,true_params = true_params, mode='emb')[0] for frame in stacked_gen_seq]
-        assert(len(embs) == len(gen_seq) - 1)
-    elif num_emb_frames == 10:
-        
-        assert(len(gen_seq) >= 10)
-        stacked_gen_seq = []
-        for i in range(10, len(gen_seq)):
-            stacked_gen_seq.append(
-                torch.stack([g for g in gen_seq[i-10:i]], dim=1))
+                torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
         embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in stacked_gen_seq]
-        assert(len(embs) == len(gen_seq) - 10)  
-
+        assert(len(embs) == len(gen_seq) - num_emb_frames)  
     else:
         raise ValueError
 

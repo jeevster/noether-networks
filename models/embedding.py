@@ -168,9 +168,11 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         #extract predicted params
         k = params[:, 0]
         #set Du and/or Du to their true values if not learnable
-        
-        Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
-        Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
+        try:
+            Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
+            Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
+        except:
+            raise RuntimeError("At least one parameter fixed as not learnable, but true value not provided")
         
         #compute PDE residual
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
