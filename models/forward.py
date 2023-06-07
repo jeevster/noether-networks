@@ -70,10 +70,11 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
         elif compare_to == 'pde_zero':
             pairwise_inner_losses = torch.stack(
                 [torch.square(emb).mean() for emb in embs])
-            # pairwise_inner_losses = torch.stack(
-            #     [pairwise_inner_losses[t-1] for t in range(1, len(embs))])
+        elif compare_to == 'pde_log':
+            pairwise_inner_losses = torch.stack(
+                [torch.abs(emb).log10().mean() for emb in embs])
         else:
-            raise ValueError('must choose prev or zero or zero_and_prev or pde_zero')
+            raise ValueError('inner_crit_compare_to must be one of [prev, zero, zero_and_prev, pde_zero, or pde_log')
     elif mode == 'cosine':
         # cosine distance is 1 minus cosine similarity
         pairwise_inner_losses = torch.stack(

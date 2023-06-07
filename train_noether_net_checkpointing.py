@@ -23,7 +23,7 @@ from models.forward import predict_many_steps, tailor_many_steps
 from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
-from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
+from models.embedding import ConservedEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
 import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
@@ -94,7 +94,7 @@ parser.add_argument('--inner_crit_mode', default='mse',
 parser.add_argument('--enc_dec_type', default='basic',
                     help='"basic" or "less_basic" or "vgg"')
 parser.add_argument('--emb_type', default='basic',
-                    help='"basic" or "conserved"')
+                    help='type of embedding - pde, pde_conv, pde_const, or naive conserved')
 parser.add_argument('--random_weights', action='store_true',
                     help='randomly init SVG weights?')
 parser.add_argument('--outer_opt_model_weights', action='store_true',
@@ -159,12 +159,6 @@ parser.add_argument('--inner_opt_all_model_weights', action='store_true',
                     help='optimize non-CN model weights in inner loop?')
 parser.add_argument('--batch_norm_to_group_norm',
                     action='store_true', help='replace BN layers with GN layers')
-parser.add_argument('--conv_emb', action='store_true',
-                    help='use fully-convolutional embedding?')
-parser.add_argument('--pde_emb', action='store_true',
-                    help='use PDE embedding?')
-parser.add_argument('--pde_const_emb', action='store_true',
-                    help='PDE embedding without learning parameters.')
 parser.add_argument('--verbose', action='store_true', help='print loss info')
 parser.add_argument('--warmstart_emb_path', default='',
                     help='path to pretrained embedding weights')
@@ -221,11 +215,11 @@ dtype = torch.cuda.DoubleTensor
 # --------- tensorboard configs -------------------------------
 tailor_str = 'None'
 if opt.tailor:
-    if opt.pde_emb:
+    if opt.emb_type == 'pde_emb':
         tailor_str = 'PDE'
-    elif opt.conv_emb:
+    elif opt.emb_type == 'conv_emb':
         tailor_str = 'Conv'
-    elif opt.pde_const_emb:
+    elif opt.emb_type == "pde_const_emb":
         tailor_str = 'PDE_Const'
 writer = SummaryWriter(os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
@@ -412,17 +406,17 @@ for trial_num in range(opt.num_trials):
         # decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         # encoder.apply(utils.init_weights)
         # decoder.apply(utils.init_weights)
-        if opt.conv_emb:
+        if opt.emb_type == 'conv_emb':
             embedding = ConvConservedEmbedding(image_width=opt.image_width,
                                                 nc=opt.num_emb_frames * opt.channels)
             print('initialized Convolutional ConservedEmbedding')
-        elif opt.pde_emb:
+        elif opt.emb_type == 'pde_emb':
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                         in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
                                                         n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
             print('initialized Learnable PDE ConservedEmbedding')
 
-        elif opt.pde_const_emb:
+        elif opt.emb_type == 'pde_const_emb':
             embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                         in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
                                                         n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
@@ -477,7 +471,7 @@ for trial_num in range(opt.num_trials):
         svg_model = utils.batch_norm_to_group_norm(svg_model)
 
     #load pretrained embedding model
-    if opt.warmstart_emb_path != '':
+    if opt.warmstart_emb_path != '' and opt.emb_type != "pde_const_emb":
         emb_ckpt = torch.load(opt.warmstart_emb_path)
         svg_model.emb.load_state_dict(emb_ckpt['model_state'])
 
@@ -501,7 +495,7 @@ for trial_num in range(opt.num_trials):
         baseline_svg_model.cuda()
         baseline_svg_model.eval()
 
-    # TODO NC: I'm pretty sure none of this neads to be changed since we're using identity now.
+    # TODO NC: I'm pretty sure none of this needs to be changed since we're using identity now.
 
     # Init outer optimizer
     emb_params = [p[1] for p in svg_model.emb.named_parameters() if not (
@@ -889,10 +883,7 @@ hyperparameters = {
     'fno_width': opt.fno_width,
     'fno_layers': opt.fno_layers,
     'inner_opt_all_model_weights': opt.inner_opt_all_model_weights,
-    'batch_norm_to_group_norm': opt.batch_norm_to_group_norm,
-    'conv_emb': opt.conv_emb,
-    'pde_emb': opt.pde_emb,
-    'pde_const_emb': opt.pde_const_emb,
+    'batch_norm_to_group_norm': opt.batch_norm_to_group_norm
 }
 hparams_logging = hparams(hyperparameters, final_metrics)
 for i in hparams_logging:

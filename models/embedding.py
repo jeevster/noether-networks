@@ -62,31 +62,6 @@ class ConvConservedEmbedding(nn.Module):
         out = out.reshape(out.size(0), -1)
         return out
 
-
-class EncoderEmbedding(nn.Module):
-    # here for legacy purposes; don't use this
-    def __init__(self, encoder, emb_dim=8, image_width=128, nc=3,
-                 num_emb_frames=2, batch_size=2):
-        super(EncoderEmbedding, self).__init__()
-        self.emb_dim = emb_dim
-        self.num_emb_frames = num_emb_frames
-        self.encoder = copy.deepcopy(encoder)
-        self.batch_size = batch_size
-        self.nc = nc
-        replace_cn_layers(self.encoder, batch_size=batch_size * num_emb_frames)
-        self.encoder.cuda()
-        self.enc_dim = self.encoder.dim
-        self.linear = nn.Linear(
-            self.enc_dim * self.num_emb_frames, self.emb_dim)
-
-    def forward(self, x):
-        out = x.reshape(x.size(0) * self.num_emb_frames,
-                        self.nc, x.size(2), x.size(3))
-        out = self.encoder(out)[0].reshape(self.batch_size, -1)
-        out = self.linear(out)
-        return out
-
-
 class ConstantLayer(nn.Module):
     '''layer that returns a constant value (batched)'''
 
@@ -99,6 +74,19 @@ class ConstantLayer(nn.Module):
     def forward(self, x):
         b_size = x.shape[0]
         return self.const_tensor.expand(b_size, self.num_constants)
+
+class ConstantLayer_MultiParam(nn.Module):
+    '''takes in a constant value and returns it (batched)'''
+
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x, *constants):
+        b_size = x.shape[0]
+        num_constants = len(constants)
+        const_tensor = torch.cat(constants).view(-1, b_size).T
+        const_tensor.requires_grad = False
+        return const_tensor
 
 
 class TwoDDiffusionReactionEmbedding(torch.nn.Module):
@@ -114,13 +102,13 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         self.num_learned_parameters = num_learned_parameters
         self.use_partials = use_partials
         self.n_frames = n_frames if not self.use_partials else 6*n_frames #(5 partial derivatives + 1 solution field) =  6 
-
+        self.learned = learned
         # param is either a network or a callable constant
-        if learned:
+        if self.learned:
             self.paramnet = ParameterNet(
                 self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters).to(self.device)
         else:
-            self.paramnet = ConstantLayer(5e-3, 1e-3, 5e-3)
+            self.paramnet = ConstantLayer_MultiParam()
         # initialize grid for finite differences
         try:
             file = h5py.File(join(data_root, "2D_diff-react_Du=0.01704641_Dv=0.0154535_k=0.009386063.h5"))
@@ -134,17 +122,6 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         self.dy = (self.y[1] - self.y[0])
         self.dt = (self.t[1] - self.t[0])
 
-
-    def reaction_1(self, solution_field, k):
-        u = solution_field[:, -1, 0]
-        v = solution_field[:, -1, 1]
-        return u - (u * u * u) - k - v
-
-    def reaction_2(self, solution_field):
-        u = solution_field[:, -1, 0]
-        v = solution_field[:, -1, 1]
-        return u - v
-
     # 2D reaction diffusion
     def forward(self, solution_field, true_params = None, return_params = False):
         # solution_field = solution_field.reshape(solution_field.shape[0],
@@ -154,16 +131,15 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         u_stack = solution_field[:, :, 0]
         v_stack = solution_field[:, :, 1]
 
-        if true_params is not None:
-            with torch.no_grad():
+        with torch.no_grad():
+            if true_params is not None:
                 k_true, Du_true, Dv_true = true_params
                 true_residual, partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k_true, Du_true, Dv_true, compute_residual = True, return_partials = True)
-        else:
-            with torch.no_grad():
+            else:    
                 partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, None, None, None, compute_residual = False, return_partials = True)
         #predict params using network
         input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
-        params = self.paramnet(input_data)
+        params = self.paramnet(input_data) if self.learned else self.paramnet(input_data, *true_params)
 
         #extract predicted params
         k = params[:, 0]
