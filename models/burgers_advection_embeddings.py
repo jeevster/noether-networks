@@ -18,8 +18,6 @@ from os.path import join
 from functools import partial
 from models.nithin_embedding import reaction_diff_2d_residual_compute
 from models.cn import replace_cn_layers
-import pdb
-from data.oned_burger_advection import OneDBurgers_MultiParam,OneDAdvection_MultiParam
 import glob
 class ConservedEmbedding(nn.Module):
     def __init__(self, emb_dim=8, image_width=64, nc=3):
@@ -105,10 +103,10 @@ class ConstantLayer(nn.Module):
         return self.const_tensor.expand(b_size, self.num_constants)
 
 
-class OneDDBurgerEmbedding(torch.nn.Module):
+class OneDBurgersEmbedding(torch.nn.Module):
     # 2d diffusion-reaction module with learnable parameters
     def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, data_root, learned, num_learned_parameters = 1, use_partials = False):
-        super(OneDDBurgerEmbedding, self).__init__()
+        super(OneDBurgersEmbedding, self).__init__()
         # initialize learnable networks
         self.in_channels = in_channels
         self.in_size = in_size
@@ -143,7 +141,6 @@ class OneDDBurgerEmbedding(torch.nn.Module):
         data_x = torch.gradient(data, spacing = (x,), dim=x_axis)[0]
         data_x_usqr = torch.gradient(data * data / 2, spacing = (x,), dim=x_axis)[0]
         data_xx = torch.gradient(data_x, spacing = (x,), dim=x_axis)[0]
-        print("inside partials_torch", "data.shape", data.shape, "t.shape", t.shape)
         data_t = torch.gradient(data, spacing = t, dim=t_axis)[0]
         return data_x, data_x_usqr, data_xx, data_t
     
@@ -152,20 +149,22 @@ class OneDDBurgerEmbedding(torch.nn.Module):
         
         data_x, data_x_usqr, data_xx, data_t = self.partials_torch(u, x, t)
         pi = torch.pi
-
+        # pi = pi.to(torch.float64)
+        data_x_usqr = data_x_usqr.to(torch.float64)
+        data_x = data_x.to(torch.float64)
+        data_t = data_t.to(torch.float64)
+        data_xx = data_xx.to(torch.float64)
         eqn1 = data_x_usqr + data_t - ((nu/pi) * data_xx)
 
-        pde_residual = (eqn1).abs().mean(dim = (1,2,3))
-
+        pde_residual = (eqn1.to(torch.float64)).abs().mean(dim = (1,2,3)).to(torch.float64)
         if return_partials:
-            u_partials = torch.cat([data_x, data_xx, data_t], dim = 1)
-            u_partials = u_partials[:,:,None,:,:].to(self.device)
+            u_partials = torch.cat([data_x, data_xx, data_t], dim = 1).to(torch.float64)
+            u_partials = u_partials[:,:,None,:,:].to(torch.float64).to(self.device)
             return pde_residual, u_partials #keep u and v partials separate
         else:
             return pde_residual
 
     def forward(self, solution_field, true_params = None, return_params = False):
-        print("solution_field.shape 1", solution_field.shape)
         solution_field = solution_field.reshape(solution_field.shape[0],
                                                 int(solution_field.shape[1] /
                                                     self.in_channels), self.in_channels,
@@ -175,30 +174,27 @@ class OneDDBurgerEmbedding(torch.nn.Module):
 
         u_stack = solution_field[:, :, 0].to(self.device)
         # u_stack = u_stack.permute((0,1,3,2))
-        print("u_stack", u_stack.shape)
+        # print("u_stack", u_stack.shape)
 
         if true_params is not None:
             with torch.no_grad():
                 nu_true = true_params[0]
                 true_residual, partials = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
 
-        print("partials.shape",partials.shape,"solution_field.shape", solution_field.shape)
         input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else u_stack
         input_data = input_data.to(torch.float64)
-        print('input_data',input_data.dtype)#, "self.paramnet.get_device()",self.paramnet.get_device())
         input_data = input_data.double()
-        print("input_data", input_data.dtype)
         # pdb.set_trace()
         params = self.paramnet(input_data[:,:,0,:,0])
         nu = params[:, 0].double()
         
         
-        print("NU", nu.shape)
+        # print("NU", nu.shape)
         residual = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu)
 
         
         
-        print("res", residual.shape)
+        # print("res", residual.shape)
         if return_params:
             if true_params is not None:
                 return residual, true_residual, tuple([nu])
@@ -222,7 +218,7 @@ class ParameterNet(nn.Module):
             in_channels=in_channels, out_channels=hidden_channels, n_layers=n_layers).double()
 
 
-            self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2).double()),
+            self.conv = nn.Sequential(Conv2d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=(2, 2)),
             nn.ReLU().double(),
             nn.MaxPool2d(4).double(),
             Conv2d(hidden_channels, hidden_channels,
@@ -236,9 +232,9 @@ class ParameterNet(nn.Module):
             hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).double()
         elif self.dimensions == 1:
             self.fno_encoder = FNO1d(n_modes_height = 16, hidden_channels = hidden_channels,
-            in_channels = in_channels, out_channels = hidden_channels, n_layers = n_layers).double()
-            self.fno_encoder = self.fno_encoder.apply(lambda t: t.double())
-            self.conv = nn.Sequential(Conv1d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=2),
+            in_channels = in_channels, out_channels = hidden_channels, n_layers = n_layers).to(torch.complex128)
+            self.fno_encoder = self.fno_encoder.apply(lambda t: t.to(torch.complex128))
+            self.conv = nn.Sequential(Conv1d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=2),
                         nn.ReLU(),
                         nn.MaxPool1d(4),
                         Conv1d(hidden_channels, hidden_channels,
@@ -255,7 +251,7 @@ class ParameterNet(nn.Module):
                 x = x.reshape(x.shape[0], -1, x.shape[3], x.shape[4])
 
 
-            x = self.fno_encoder(x.float()).double()
+            x = self.fno_encoder()
             x = self.conv(x).double()
             x = torch.flatten(x, start_dim=1)
             return self.mlp(x)
@@ -266,26 +262,101 @@ class ParameterNet(nn.Module):
             x = torch.flatten(x, start_dim=1)
             return self.mlp(x)
 
-# loader = OneDBurgers_MultiParam('/data/nithinc/pdebench/burgers', percent_train = 0.4)
-# loader_len = loader.__len__()
-# datas = []
-# params = []
-# for i in range(0,loader_len,2):
-#     data, param = loader.__getitem__(i)
-#     datas.append(data.unsqueeze(0))
-#     params.append(list(param))
-# params = torch.tensor(params)
-# print("params", params.shape)
-# stacked_data = torch.vstack(datas)
-# print("datas", stacked_data.shape)
-# torch.save(stacked_data, 'stacked_data.pt')
-# # torch.save(params, 'params.pt')
-# params = torch.load('params.pt')
-# stacked_data = torch.load("stacked_data.pt")
-# print("params", params.shape)
-# print("datas", stacked_data.shape)
 
-# embedding = OneDDBurgerEmbedding(in_size  = 64, in_channels = 1, n_frames = 1, 
-#                                  hidden_channels = 20, n_layers = 4, data_root = '/data/nithinc/pdebench/burgers', learned = True)
 
-# print(embedding(stacked_data, true_params = params, return_params =  True))
+
+class OneDAdvectionEmbedding(torch.nn.Module):
+    # 2d diffusion-reaction module with learnable parameters
+    def __init__(self, in_size, in_channels, n_frames, hidden_channels, n_layers, data_root, learned, num_learned_parameters = 1, use_partials = False):
+        super(OneDAdvectionEmbedding, self).__init__()
+        # initialize learnable networks
+        self.in_channels = in_channels
+        self.in_size = in_size
+        self.hidden_channels = hidden_channels
+        self.n_layers = n_layers
+        self.device = torch.cuda.current_device()
+        self.num_learned_parameters = num_learned_parameters
+        self.use_partials = use_partials
+        self.n_frames = n_frames if not self.use_partials else 3*n_frames #(2 partial derivatives + 1 solution field) =  3
+        self.data_root = data_root
+        # param is either a network or a callable constant
+        if learned:
+            self.paramnet = ParameterNet(
+                self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters, dimensions=1)
+            self.paramnet = self.paramnet.apply(lambda t: t.cuda())
+            # self.paramnet = self.paramnet.apply(lambda t: t.double())
+        else:
+            self.paramnet = ConstantLayer(1e-3)
+        # initialize grid for finite differences
+        file = h5py.File(join(data_root, glob.glob(f"{self.data_root}/*.hdf5")[-1]))
+
+        self.x = torch.Tensor(file['x-coordinate'][:]).to(self.device)
+        self.t = torch.Tensor(file['t-coordinate'][:]).to(self.device)
+        self.dx = (self.x[1] - self.x[0])
+        self.dt = (self.t[1] - self.t[0])
+
+
+    def partials_torch(self,data, x, t):
+        x_axis = -2
+        t_axis = -3
+        data_x = torch.gradient(data, spacing = (x,), dim=x_axis)[0]
+        data_t = torch.gradient(data, spacing = t, dim=t_axis)[0]
+        return data_x, data_t
+    
+    def advection_1d_residual_compute(self, u, x,t,nu, return_partials = False):
+        nu = nu.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(self.device)
+        
+        data_x, data_t = self.partials_torch(u, x, t)
+        pi = torch.pi
+
+        eqn1 = (nu * data_x) + data_t 
+        " ^^^ advection eqn from pde bench^^^ "
+
+        pde_residual = (eqn1).abs().mean(dim = (1,2,3))
+
+        if return_partials:
+            u_partials = torch.cat([data_x, data_t], dim = 1)
+            u_partials = u_partials[:,:,None,:,:].to(self.device)
+            return pde_residual, u_partials #keep u and v partials separate
+        else:
+            return pde_residual
+
+    def forward(self, solution_field, true_params = None, return_params = False):
+        
+        solution_field = solution_field.reshape(solution_field.shape[0],
+                                                int(solution_field.shape[1] /
+                                                    self.in_channels), self.in_channels,
+                                                solution_field.shape[2], 1).to(self.device)
+
+        
+        u_stack = solution_field[:, :, 0].to(self.device)
+        # u_stack = u_stack.permute((0,1,3,2))
+
+        if true_params is not None:
+            with torch.no_grad():
+                nu_true = true_params[0]
+                true_residual, partials = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
+
+        input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else u_stack
+        input_data = input_data.to(torch.float64)
+        input_data = input_data.double()
+        # pdb.set_trace()
+        params = self.paramnet(input_data[:,:,0,:,0])
+        nu = params[:, 0].double()
+        
+        
+        residual = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu)
+
+        
+        
+        if return_params:
+            if true_params is not None:
+                return residual, true_residual, tuple([nu])
+            else:
+                return residual, tuple([nu])
+        else:
+            if true_params is not None:
+                return residual, true_residual
+            else:
+                return residual
+
