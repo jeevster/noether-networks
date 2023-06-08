@@ -221,10 +221,13 @@ if opt.tailor:
     elif opt.pde_const_emb:
         tailor_str = 'PDE_Const'
 
-save_dir = os.path.join(opt.log_dir,
+write_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
-writer = SummaryWriter(save_dir)
+writer = SummaryWriter(write_dir)
+#dump params to yml
+dump_params_to_yml(opt, write_dir)
+
 if opt.tailor:
     max_tailor_steps = opt.num_inner_steps + 1
     custom_scalars = {

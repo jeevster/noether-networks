@@ -316,11 +316,12 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                                                                            )
 
         # track metrics
-        if opt.tailor:
-            tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
-                                     num_emb_frames=opt.num_emb_frames,
-                                     compare_to=opt.inner_crit_compare_to).detach()
-            tailor_losses.append(tailor_loss.mean().cpu().item())
+        #if opt.tailor:
+        #want to measure PDE residual loss even when not tailoring
+        tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+                                    num_emb_frames=opt.num_emb_frames,
+                                    compare_to=opt.inner_crit_compare_to).detach()
+        tailor_losses.append(tailor_loss.mean().cpu().item())
 
         svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
                             mu_ps, logvar_ps, opt).detach().cpu().item()

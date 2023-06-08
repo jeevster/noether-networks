@@ -11,7 +11,7 @@ import os
 import random
 from torch.utils.data import DataLoader
 import utils
-from utils import svg_crit
+from utils import svg_crit, dump_params_to_yml
 import itertools
 import numpy as np
 import copy
@@ -221,22 +221,28 @@ if opt.tailor:
         tailor_str = 'Conv'
     elif opt.emb_type == "pde_const_emb":
         tailor_str = 'PDE_Const'
-writer = SummaryWriter(os.path.join(opt.log_dir,
+    tailor_str += f'_{opt.num_inner_steps}'
+save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
-                                    f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}'))
-if opt.tailor:
-    max_tailor_steps = opt.num_inner_steps + 1
-    custom_scalars = {
-        "Inner Loss": {
-            "Train": ["Multiline", [f"Inner Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
-            "Val": ["Multiline", [f"Inner Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
-        },
-        "SVG Loss": {
-            "Train": ["Multiline", [f"SVG Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
-            "Val": ["Multiline", [f"SVG Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
-        },
-    }
-    writer.add_custom_scalars(custom_scalars)
+                                    f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
+writer = SummaryWriter(save_dir)
+#dump params to yml
+dump_params_to_yml(opt, save_dir)
+
+#if opt.tailor:
+#want to measure PDE residual loss even when not tailoring
+max_tailor_steps = opt.num_inner_steps + 1
+custom_scalars = {
+    "Inner Loss": {
+        "Train": ["Multiline", [f"Inner Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
+        "Val": ["Multiline", [f"Inner Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
+    },
+    "SVG Loss": {
+        "Train": ["Multiline", [f"SVG Loss/train/{i} Steps" for i in range(max_tailor_steps)]],
+        "Val": ["Multiline", [f"SVG Loss/val/{i} Steps" for i in range(max_tailor_steps)]],
+    },
+}
+writer.add_custom_scalars(custom_scalars)
 
 
 # --------- load a dataset ------------------------------------
@@ -371,9 +377,10 @@ def restore_checkpoint(model, log_dir, device, best_outer = False, best_inner = 
         checkpoint = torch.load(checkpoint_path, map_location= device)
         model.load_state_dict(checkpoint['model_state'])
 
-save_dir = os.path.join(opt.log_dir,
-                                    str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
-                                    f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
+# save_dir = os.path.join(opt.log_dir,
+#                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
+#                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
+# os.makedirs(save_dir, exist_ok=True)
 
 # --------- meta-training loop ------------------------------------
 # usually only do one trial -- a trial is basically a run through the
@@ -406,7 +413,13 @@ for trial_num in range(opt.num_trials):
         # decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         # encoder.apply(utils.init_weights)
         # decoder.apply(utils.init_weights)
-        if opt.emb_type == 'conv_emb':
+        if not opt.tailor: #if we're not tailoring, then make the embedding the non-learnable (i.e "true") PDE residual so we can compute the inner loss
+            embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
+                                                        in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
+                                                        n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
+            print('No tailoring - initialized Constant PDE ConservedEmbedding for inner loss logging')
+
+        elif opt.emb_type == 'conv_emb':
             embedding = ConvConservedEmbedding(image_width=opt.image_width,
                                                 nc=opt.num_emb_frames * opt.channels)
             print('initialized Convolutional ConservedEmbedding')
@@ -429,7 +442,8 @@ for trial_num in range(opt.num_trials):
             print('initialized ConservedEmbedding')
 
         # In the case where we don't do tailoring, we can drop the embedding
-        embedding = nn.Identity() if not opt.tailor else embedding
+        #EDIT: probably don't want to do this since we still want to compute the inner losses when we don't tailor
+        #embedding = nn.Identity() if not opt.tailor else embedding
 
         # complete model
         svg_model = SVGModel(encoder, frame_predictor,
@@ -471,7 +485,7 @@ for trial_num in range(opt.num_trials):
         svg_model = utils.batch_norm_to_group_norm(svg_model)
 
     #load pretrained embedding model
-    if opt.warmstart_emb_path != '' and opt.emb_type != "pde_const_emb":
+    if opt.warmstart_emb_path != '' and opt.tailor and opt.emb_type != "pde_const_emb":
         emb_ckpt = torch.load(opt.warmstart_emb_path)
         svg_model.emb.load_state_dict(emb_ckpt['model_state'])
 
@@ -598,7 +612,7 @@ for trial_num in range(opt.num_trials):
                     # into memory issues due to storing the whole dynamic computational graph
                     # associated with unrolling the sequence in the inner loop for many steps
 
-                    # perform tailoring (autoregressive prediciton, tailoring, predict again)
+                    # perform tailoring (autoregressive prediction, tailoring, predict again)
 
                     # Tailor many steps uses opt.tailor to decide whether to tailor or not
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
@@ -635,11 +649,11 @@ for trial_num in range(opt.num_trials):
                         val_batch_inner_losses[0][0]] + [l[1] for l in val_batch_inner_losses]
                 else:
                     val_batch_svg_losses = [val_batch_svg_losses[0][0]]
-                    if opt.tailor:
-                        val_batch_inner_losses = [val_batch_inner_losses[0][0]]
-                    else:
-                        val_batch_inner_losses = [
-                            0 for _ in range(len(val_batch_svg_losses))]
+                    #if opt.tailor:
+                    val_batch_inner_losses = [val_batch_inner_losses[0][0]]
+                    # else:
+                    #     val_batch_inner_losses = [
+                    #         0 for _ in range(len(val_batch_svg_losses))]
 
                 # Should be zero when opt.tailor is False
                 epoch_val_inner_losses.append(val_batch_inner_losses)
@@ -661,10 +675,10 @@ for trial_num in range(opt.num_trials):
                                   (epoch + 1))
                 if opt.verbose:
                     print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
-            if opt.tailor:
-                for step, value in enumerate(val_inner_losses[-1]):
-                    writer.add_scalar(
-                        f'Inner Loss/val/{step} Step', value, (epoch + 1))
+            #if opt.tailor:
+            for step, value in enumerate(val_inner_losses[-1]):
+                writer.add_scalar(
+                    f'Inner Loss/val/{step} Step', value, (epoch + 1))
             if opt.verbose:
                 print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
             for step, value in enumerate(val_svg_losses[-1]):
@@ -680,12 +694,12 @@ for trial_num in range(opt.num_trials):
                     min_val_outer_loss = val_outer_losses[-1]
                     save_checkpoint(embedding, save_dir, True, False, False)
             if opt.ckpt_inner_loss:
-                if  min_val_inner_loss > val_inner_losses[-1]:
-                    min_val_inner_loss = val_inner_losses[-1]
+                if  min_val_inner_loss > val_inner_losses[-1][-1]:
+                    min_val_inner_loss = val_inner_losses[-1][-1]
                     save_checkpoint(embedding, save_dir, False, True, False)        
             if opt.ckpt_svg_loss:
-                if  min_val_svg_loss > val_svg_losses[-1]:
-                    min_val_svg_loss = val_svg_losses[-1]
+                if  min_val_svg_loss > val_svg_losses[-1][-1]:
+                    min_val_svg_loss = val_svg_losses[-1][-1]
                     save_checkpoint(embedding, save_dir, False, False, True)    
         # Training
         print(f'Train {epoch} Epoch')
@@ -754,11 +768,11 @@ for trial_num in range(opt.num_trials):
                                     ] + [l[1] for l in batch_svg_losses]
             else:
                 batch_svg_losses = [batch_svg_losses[0][0]]
-                if opt.tailor:
-                    batch_inner_losses = [batch_inner_losses[0][0]]
-                else:
-                    batch_inner_losses = [
-                        0 for _ in range(len(batch_svg_losses))]
+                #if opt.tailor:
+                batch_inner_losses = [batch_inner_losses[0][0]]
+                # else:
+                #     batch_inner_losses = [
+                #         0 for _ in range(len(batch_svg_losses))]
 
             epoch_inner_losses.append(batch_inner_losses)
             epoch_svg_losses.append(batch_svg_losses)
@@ -777,10 +791,10 @@ for trial_num in range(opt.num_trials):
         outer_losses.append(train_outer_loss / (opt.num_train_batch))
         writer.add_scalar('Outer Loss/train', outer_losses[-1],
                           (epoch + 1))
-        if opt.tailor:
-            for step, value in enumerate(inner_losses[-1]):
-                writer.add_scalar(
-                    f'Inner Loss/train/{step} Step', value, (epoch + 1))
+        #if opt.tailor:
+        for step, value in enumerate(inner_losses[-1]):
+            writer.add_scalar(
+                f'Inner Loss/train/{step} Step', value, (epoch + 1))
 
         if opt.verbose:
             print(f'\tInner TRAIN loss: {inner_losses[-1]}')
@@ -831,11 +845,12 @@ metric_lists = [
     all_val_inner_losses,
 ]
 
-if not opt.tailor:
-    metrics.pop()
-    metrics.pop()
-    metric_lists.pop()
-    metric_lists.pop()
+#Note: still want to keep track of inner loss even when we're not tailoring
+# if not opt.tailor:
+#     metrics.pop()
+#     metrics.pop()
+#     metric_lists.pop()
+#     metric_lists.pop()
 
 for metric, metric_list in zip(metrics, metric_lists):
     # grab the last loss

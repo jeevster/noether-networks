@@ -20,6 +20,7 @@ import numpy as np
 from sklearn.manifold import TSNE
 import scipy.misc
 import matplotlib
+import yaml
 matplotlib.use('agg')
 
 try:
@@ -33,6 +34,9 @@ hostname = socket.gethostname()
 
 svg_mse_crit = nn.MSELoss()
 
+def dump_params_to_yml(params, filepath):
+    with open(os.path.join(filepath, "config.yaml"), 'w') as f:
+        yaml.dump(params, f)
 
 def pad_zeros(tensor, target_size):
     # Get the current size of the tensor
