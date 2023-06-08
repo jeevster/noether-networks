@@ -1,6 +1,6 @@
 import torch
 # This sets the default model weights to float64
-torch.set_default_dtype(torch.float64)  # nopep8
+# torch.set_default_dtype(torch.float64)  # nopep8
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import torch.optim as optim
@@ -209,8 +209,8 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
-dtype = torch.cuda.DoubleTensor
-
+# dtype = torch.cuda.DoubleTensor
+dtype = torch.cuda.FloatTensor
 
 # --------- tensorboard configs -------------------------------
 tailor_str = 'None'
@@ -561,8 +561,9 @@ for trial_num in range(opt.num_trials):
     min_val_svg_loss = float('inf')
     # Quick sanity check to ensure float64
     for p in svg_model.named_parameters():
-        assert p[
-            1].dtype == torch.float64, f'One of the SVG Model parameters is not float64! Parameter: {p[1]}'
+        print(p[1].dtype)
+    #     assert p[
+    #         1].dtype == torch.float64, f'One of the SVG Model parameters is not float64! Parameter: {p[1]}'
 
     print(f'starting at epoch {start_epoch}')
     for epoch in range(start_epoch, opt.n_epochs):
