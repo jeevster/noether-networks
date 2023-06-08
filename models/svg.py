@@ -4,7 +4,7 @@ import torch
 
 
 class SVGModel(nn.Module):
-    def __init__(self, encoder, frame_predictor, decoder, prior, posterior, emb=None):
+    def __init__(self, encoder, frame_predictor, decoder, prior, posterior, emb=None, true_emb = None):
         super().__init__()
         self.encoder = encoder
         self.frame_predictor = frame_predictor
@@ -12,6 +12,7 @@ class SVGModel(nn.Module):
         self.prior = prior
         self.posterior = posterior
         self.emb = emb
+        self.true_emb = true_emb if true_emb is not None else None
 
     def forward(self, x_in, gt=None, true_params = None, skip=None, opt=None, i=None, mode='eval', prior_eps=[None], posterior_eps=[None]):
         '''
@@ -71,4 +72,8 @@ class SVGModel(nn.Module):
         elif mode == 'emb':
             assert (true_params is not None)
             return self.emb(x_in, true_params = true_params)
-        raise NotImplementedError('please use either "svg" or "emb" mode')
+        elif mode == 'true_emb':
+            assert(true_params is not None)
+            assert(self.true_emb is not None)
+            return self.true_emb(x_in, true_params = true_params)
+        raise NotImplementedError('please use either "svg", "emb", or "true_emb" mode')

@@ -253,8 +253,16 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                 # compute Noether loss
                 tailor_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
                                          num_emb_frames=opt.num_emb_frames,
-                                         compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
+                                     compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
 
+                #compute true PDE loss if using learnable embedding
+                true_tailor_loss = None
+                if opt.emb_type != 'pde_const_emb':
+                    with torch.no_grad():
+                        true_tailor_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
+                                            num_emb_frames=opt.num_emb_frames,
+                                            compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt, emb_mode = 'true_emb')
+                
                 if inner_step == 0:
                     # print('writing orig_gen_seq and orig_tailor_loss')
                     orig_gen_seq = [f.detach() for f in gen_seq]
@@ -287,6 +295,8 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                 # track metrics
                 # TODO: also compute outer loss at each step for plotting
                 tailor_losses.append(tailor_loss.detach().mean().item())
+                if true_tailor_loss is not None:
+                    true_tailor_losses.append(true_tailor_loss.detach().mean().item())
 
                 if 'tailor_ssims' in kwargs:
                     # compute SSIM for gen_seq batch
@@ -323,6 +333,13 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                                     compare_to=opt.inner_crit_compare_to).detach()
         tailor_losses.append(tailor_loss.mean().cpu().item())
 
+        if opt.tailor and opt.emb_type != 'pde_const_emb':
+            with torch.no_grad():
+                true_tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+                                        num_emb_frames=opt.num_emb_frames,
+                                        compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb').detach()
+            true_tailor_losses.append(true_tailor_loss.mean().cpu().item())
+
         svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
                             mu_ps, logvar_ps, opt).detach().cpu().item()
         svg_losses.append(svg_loss)
@@ -358,6 +375,12 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
             tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,
                                      compare_to=opt.inner_crit_compare_to).detach()
+            if opt.emb_type != 'pde_const_emb':
+                with torch.no_grad():
+                    true_tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+                                        num_emb_frames=opt.num_emb_frames,
+                                        compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb').detach()
+                true_tailor_losses.append(true_tailor_loss.mean().detach().cpu().item())
             tailor_losses.append(tailor_loss.mean().detach().cpu().item())
 
             if 'tailor_ssims' in kwargs:
@@ -372,6 +395,8 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
     # track metrics
     if 'tailor_losses' in kwargs:
         kwargs['tailor_losses'].append(tailor_losses)
+    if 'true_tailor_losses' in kwargs and opt.tailor and opt.pde_emb != 'pde_const_emb':
+        kwargs['true_tailor_losses'].append(true_tailor_losses)
 
     if all(m in kwargs for m in ('tailor_ssims', 'tailor_psnrs', 'tailor_mses')):
         kwargs['tailor_ssims'].append(ssims)

@@ -40,13 +40,12 @@ python train_noether_net_checkpointing.py \
 --horiz_flip \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
---num_param_combinations 64 \
 --use_partials \
 --save_checkpoint \
 --ckpt_outer_loss \
 --ckpt_inner_loss \
 --warmstart_emb_path /home/sanjeevr/noether-networks/results_summer/pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_fno4layers_width256/Thu-Jun--1-14.11.23-2023_past=2_future=2_tailor=PDE/best_ckpt_model.pt \
---log_dir ./results_noether_summer/test_tailor_pdeconstemb_npast=10_nfuture=2/ \
+--log_dir ./results_noether_summer/TEST/ \
 --channels 2 \
 --random_weights \
 --inner_opt_all_model_weights \

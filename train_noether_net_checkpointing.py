@@ -295,17 +295,17 @@ print(f'num_val_batch: {opt.num_val_batch}')
 
 
 # --------- init losses ------------------------------------
-def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev'):
+def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', emb_mode = 'emb'):
     # compute embeddings for sequence
     if num_emb_frames == 1:
-        embs = [fmodel(frame, mode='emb') for frame in gen_seq]
+        embs = [fmodel(frame, mode=emb_mode) for frame in gen_seq]
     elif num_emb_frames == 2:
         stacked_gen_seq = []
         for i in range(1, len(gen_seq)):
             stacked_gen_seq.append(
                 torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
         # len(embs) = len(gen_seq) - 1
-        embs = [fmodel(frame, mode='emb') for frame in stacked_gen_seq]
+        embs = [fmodel(frame, mode=emb_mode) for frame in stacked_gen_seq]
     else:
         raise ValueError
 
@@ -413,10 +413,15 @@ for trial_num in range(opt.num_trials):
         # decoder = model.decoder(opt.g_dim, opt.channels, use_cn_layers=True, batch_size=opt.batch_size)
         # encoder.apply(utils.init_weights)
         # decoder.apply(utils.init_weights)
-        if not opt.tailor: #if we're not tailoring, then make the embedding the non-learnable (i.e "true") PDE residual so we can compute the inner loss
-            embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
+
+        same = False
+        true_pde_embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                         in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
                                                         n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
+            
+        if not opt.tailor: #if we're not tailoring, then make the embedding the non-learnable (i.e "true") PDE residual so we can log the inner loss
+            embedding = true_pde_embedding
+            same = True
             print('No tailoring - initialized Constant PDE ConservedEmbedding for inner loss logging')
 
         elif opt.emb_type == 'conv_emb':
@@ -430,9 +435,8 @@ for trial_num in range(opt.num_trials):
             print('initialized Learnable PDE ConservedEmbedding')
 
         elif opt.emb_type == 'pde_const_emb':
-            embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
-                                                        in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                        n_layers=opt.fno_layers, data_root=opt.data_root, learned=False)
+            embedding = true_pde_embedding
+            same = True
             print('initialized Constant PDE ConservedEmbedding')
         else:
             # embedding model
@@ -447,7 +451,7 @@ for trial_num in range(opt.num_trials):
 
         # complete model
         svg_model = SVGModel(encoder, frame_predictor,
-                             decoder, prior, posterior, embedding).cuda()
+                             decoder, prior, posterior, embedding, true_pde_embedding if not same else None).cuda()
         svg_model.apply(lambda t: t.cuda())
     # load the model from ckpt
     else:
@@ -547,8 +551,10 @@ for trial_num in range(opt.num_trials):
     svg_losses = []
     val_svg_losses = []
     inner_losses = []
+    true_inner_losses = []
     val_outer_losses = []
     val_inner_losses = []
+    val_true_inner_losses = []
     emb_weights = []
     emb_biases = []
     all_gen = None
@@ -572,7 +578,9 @@ for trial_num in range(opt.num_trials):
         grad_norm_sum = 0.
         emb_norm_sum = 0.
         epoch_inner_losses = []
+        epoch_true_inner_losses = []
         epoch_val_inner_losses = []
+        epoch_val_true_inner_losses = []
         epoch_svg_losses = []
         epoch_val_svg_losses = []
         svg_model.eval()
@@ -605,6 +613,7 @@ for trial_num in range(opt.num_trials):
                 # tailoring pass
                 val_cached_cn = [None]  # cached cn params
                 val_batch_inner_losses = []
+                val_batch_true_inner_losses = []
                 val_batch_svg_losses = []
                 for batch_step in range(opt.num_jump_steps + 1):
                     # jump steps are effectively inner steps that have a single higher innerloop_ctx per
@@ -621,6 +630,7 @@ for trial_num in range(opt.num_trials):
                         mode='eval',
                         # extra kwargs
                         tailor_losses=val_batch_inner_losses,
+                        true_tailor_losses = val_batch_true_inner_losses,
                         inner_crit_mode=opt.inner_crit_mode,
                         reuse_lstm_eps=opt.reuse_lstm_eps,
                         val_inner_lr=val_inner_lr,
@@ -643,6 +653,8 @@ for trial_num in range(opt.num_trials):
                 #SR: want to log inner losses for all tailoring steps, not just the first step
                 val_batch_inner_losses = val_batch_inner_losses[0]
                 val_batch_svg_losses = val_batch_svg_losses[0]
+                if len(val_batch_true_inner_losses) !=0:
+                    val_batch_true_inner_losses = val_batch_true_inner_losses[0]
                 # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
                 #     # fix the inner losses to account for jump step
                 #     # after the zeroth, take the tailored inner loss (index 1)
@@ -658,9 +670,15 @@ for trial_num in range(opt.num_trials):
                 #     #         0 for _ in range(len(val_batch_svg_losses))]
 
                 # Should be zero when opt.tailor is False
+                if len(val_batch_true_inner_losses) !=0:
+                    epoch_val_batch_true_inner_losses.append(val_batch_true_inner_losses)
                 epoch_val_inner_losses.append(val_batch_inner_losses)
                 epoch_val_svg_losses.append(val_batch_svg_losses)
 
+            if len(val_batch_true_inner_losses) !=0:
+                val_true_inner_losses.append([sum(x) / (opt.num_val_batch)
+                                    for x in zip(*epoch_val_true_inner_losses)])
+                
             val_inner_losses.append([sum(x) / (opt.num_val_batch)
                                     for x in zip(*epoch_val_inner_losses)])
             val_svg_losses.append([sum(x) / (opt.num_val_batch)
@@ -678,10 +696,14 @@ for trial_num in range(opt.num_trials):
                 if opt.verbose:
                     print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
             #if opt.tailor:
-            import pdb; pdb.set_trace()
             for step, value in enumerate(val_inner_losses[-1]):
                 writer.add_scalar(
                     f'Inner Loss/val/{step} Step', value, (epoch + 1))
+            #Log true PDE loss
+            for step, value in enumerate(val_true_inner_losses[-1]):
+                writer.add_scalar(
+                    f'True Inner Loss/val/{step} Step', value, (epoch + 1))
+
             if opt.verbose:
                 print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
             for step, value in enumerate(val_svg_losses[-1]):
@@ -724,6 +746,7 @@ for trial_num in range(opt.num_trials):
                     mode=train_mode,
                     # extra kwargs
                     tailor_losses=batch_inner_losses,
+                    true_tailor_losses = batch_true_inner_losses,
                     inner_crit_mode=opt.inner_crit_mode,
                     reuse_lstm_eps=opt.reuse_lstm_eps,
                     svg_losses=batch_svg_losses,
@@ -764,6 +787,8 @@ for trial_num in range(opt.num_trials):
                     if len(emb_p) > 0:
                         emb_norm_sum += torch.norm(torch.stack(emb_p)).item()
             #SR: want to log inner losses for all tailoring steps, not just the first step
+            if len(batch_true_inner_losses) != 0:
+                batch_true_inner_losses = batch_true_inner_losses[0]
             batch_inner_losses = batch_inner_losses[0]
             batch_svg_losses = batch_svg_losses[0]
             # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
@@ -779,6 +804,8 @@ for trial_num in range(opt.num_trials):
             #     # else:
             #     #     batch_inner_losses = [
             #     #         0 for _ in range(len(batch_svg_losses))]
+            if len(batch_true_inner_losses) != 0:
+                epoch_true_inner_losses.append(batch_true_inner_losses)
 
             epoch_inner_losses.append(batch_inner_losses)
             epoch_svg_losses.append(batch_svg_losses)
@@ -787,10 +814,15 @@ for trial_num in range(opt.num_trials):
             outer_opt.step()
             svg_model.zero_grad(set_to_none=True)
 
+        
         svg_losses.append([sum(x) / (opt.num_train_batch)
                           for x in zip(*epoch_svg_losses)])
         inner_losses.append([sum(x) / (opt.num_train_batch)
                             for x in zip(*epoch_inner_losses)])
+        if len(batch_true_inner_losses) != 0:
+            true_inner_losses.append([sum(x) / (opt.num_train_batch)
+                            for x in zip(*epoch_true_inner_losses)])
+
         grad_norms.append(grad_norm_sum / opt.num_train_batch)
         emb_norms.append(emb_norm_sum / opt.num_train_batch)
 
@@ -801,6 +833,10 @@ for trial_num in range(opt.num_trials):
         for step, value in enumerate(inner_losses[-1]):
             writer.add_scalar(
                 f'Inner Loss/train/{step} Step', value, (epoch + 1))
+
+        for step, value in enumerate(true_inner_losses[-1]):
+            writer.add_scalar(
+                f'True Inner Loss/train/{step} Step', value, (epoch + 1))
 
         if opt.verbose:
             print(f'\tInner TRAIN loss: {inner_losses[-1]}')
