@@ -640,20 +640,22 @@ for trial_num in range(opt.num_trials):
                     if opt.baseline:
                         baseline_outer_loss += base_outer_loss.detach().cpu().item()
 
-                if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
-                    # fix the inner losses to account for jump step
-                    # after the zeroth, take the tailored inner loss (index 1)
-                    val_batch_svg_losses = [
-                        val_batch_svg_losses[0][0]] + [l[1] for l in val_batch_svg_losses]
-                    val_batch_inner_losses = [
-                        val_batch_inner_losses[0][0]] + [l[1] for l in val_batch_inner_losses]
-                else:
-                    val_batch_svg_losses = [val_batch_svg_losses[0][0]]
-                    #if opt.tailor:
-                    val_batch_inner_losses = [val_batch_inner_losses[0][0]]
-                    # else:
-                    #     val_batch_inner_losses = [
-                    #         0 for _ in range(len(val_batch_svg_losses))]
+                #SR: want to log inner losses for all tailoring steps, not just the first step
+                val_batch_inner_losses = val_batch_inner_losses[0]
+                val_batch_svg_losses = val_batch_svg_losses[0]
+                # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
+                #     # fix the inner losses to account for jump step
+                #     # after the zeroth, take the tailored inner loss (index 1)
+                #     val_batch_svg_losses = [
+                #         val_batch_svg_losses[0][0]] + [l[1] for l in val_batch_svg_losses]
+                #     val_batch_inner_losses = [val_batch_inner_losses[0][0]] + [l[1] for l in val_batch_inner_losses]
+                # else:
+                #     val_batch_svg_losses = [val_batch_svg_losses[0][0]]
+                #     #if opt.tailor:
+                #     val_batch_inner_losses = [val_batch_inner_losses[0][0]]
+                #     # else:
+                #     #     val_batch_inner_losses = [
+                #     #         0 for _ in range(len(val_batch_svg_losses))]
 
                 # Should be zero when opt.tailor is False
                 epoch_val_inner_losses.append(val_batch_inner_losses)
@@ -676,6 +678,7 @@ for trial_num in range(opt.num_trials):
                 if opt.verbose:
                     print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
             #if opt.tailor:
+            import pdb; pdb.set_trace()
             for step, value in enumerate(val_inner_losses[-1]):
                 writer.add_scalar(
                     f'Inner Loss/val/{step} Step', value, (epoch + 1))
@@ -760,19 +763,22 @@ for trial_num in range(opt.num_trials):
                              for p in svg_model.emb.parameters()]
                     if len(emb_p) > 0:
                         emb_norm_sum += torch.norm(torch.stack(emb_p)).item()
-            if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
-                # fix the inner losses to account for jump step
-                batch_inner_losses = [batch_inner_losses[0]
-                                      [0]] + [l[1] for l in batch_inner_losses]
-                batch_svg_losses = [batch_svg_losses[0][0]
-                                    ] + [l[1] for l in batch_svg_losses]
-            else:
-                batch_svg_losses = [batch_svg_losses[0][0]]
-                #if opt.tailor:
-                batch_inner_losses = [batch_inner_losses[0][0]]
-                # else:
-                #     batch_inner_losses = [
-                #         0 for _ in range(len(batch_svg_losses))]
+            #SR: want to log inner losses for all tailoring steps, not just the first step
+            batch_inner_losses = batch_inner_losses[0]
+            batch_svg_losses = batch_svg_losses[0]
+            # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
+            #     # fix the inner losses to account for jump step
+            #     batch_inner_losses = [batch_inner_losses[0]
+            #                           [0]] + [l[1] for l in batch_inner_losses]
+            #     batch_svg_losses = [batch_svg_losses[0][0]
+            #                         ] + [l[1] for l in batch_svg_losses]
+            # else:
+            #     batch_svg_losses = [batch_svg_losses[0][0]]
+            #     #if opt.tailor:
+            #     batch_inner_losses = [batch_inner_losses[0][0]]
+            #     # else:
+            #     #     batch_inner_losses = [
+            #     #         0 for _ in range(len(batch_svg_losses))]
 
             epoch_inner_losses.append(batch_inner_losses)
             epoch_svg_losses.append(batch_svg_losses)

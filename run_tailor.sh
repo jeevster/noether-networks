@@ -40,6 +40,7 @@ python train_noether_net_checkpointing.py \
 --horiz_flip \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
+--num_param_combinations 64 \
 --use_partials \
 --save_checkpoint \
 --ckpt_outer_loss \
