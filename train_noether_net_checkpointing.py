@@ -672,7 +672,7 @@ for trial_num in range(opt.num_trials):
 
                 # Should be zero when opt.tailor is False
                 if len(val_batch_true_inner_losses) !=0:
-                    epoch_val_batch_true_inner_losses.append(val_batch_true_inner_losses)
+                    epoch_val_true_inner_losses.append(val_batch_true_inner_losses)
                 epoch_val_inner_losses.append(val_batch_inner_losses)
                 epoch_val_svg_losses.append(val_batch_svg_losses)
 
@@ -737,6 +737,7 @@ for trial_num in range(opt.num_trials):
             # tailoring pass
             cached_cn = [None]  # cached cn params
             batch_inner_losses = []
+            batch_true_inner_losses = []
             batch_svg_losses = []
             for batch_step in range(opt.num_jump_steps + 1):
 

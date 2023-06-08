@@ -18,14 +18,14 @@ python train_noether_net_checkpointing.py \
 --inner_crit_mode mse \
 --inner_crit_compare_to pde_log \
 --enc_dec_type vgg \
---emb_type pde_const_emb \
+--emb_type pde_emb \
 --num_epochs_per_val 1 \
 --fno_modes 16 \
 --fno_width 256 \
 --fno_layers 4 \
 --emb_dim 64 \
 --batch_size 4 \
---num_inner_steps 10 \
+--num_inner_steps 1 \
 --num_jump_steps 0 \
 --n_epochs 140 \
 --inner_lr .0001 \
@@ -40,6 +40,7 @@ python train_noether_net_checkpointing.py \
 --horiz_flip \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
+--num_param_combination 64 \
 --use_partials \
 --save_checkpoint \
 --ckpt_outer_loss \

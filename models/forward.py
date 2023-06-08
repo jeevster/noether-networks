@@ -15,17 +15,17 @@ from models.cn import replace_cn_layers, load_cached_cn_modules, cache_cn_module
 from utils import svg_crit
 
 
-def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None):
+def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None, emb_mode = 'emb'):
     # compute embeddings for sequence
     if num_emb_frames == 1:
-        embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in gen_seq]
+        embs = [fmodel(frame, true_params = true_params, mode=emb_mode)[0] for frame in gen_seq]
     elif num_emb_frames >1:
         assert(len(gen_seq) >= num_emb_frames)
         stacked_gen_seq = []
         for i in range(num_emb_frames, len(gen_seq)):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
-        embs = [fmodel(frame, true_params = true_params, mode='emb')[0] for frame in stacked_gen_seq]
+        embs = [fmodel(frame, true_params = true_params, mode=emb_mode)[0] for frame in stacked_gen_seq]
         assert(len(embs) == len(gen_seq) - num_emb_frames)  
     else:
         raise ValueError
@@ -215,6 +215,7 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
         inner_crit_mode = kwargs['inner_crit_mode']
 
     tailor_losses = []
+    true_tailor_losses = []
     svg_losses = []
     ssims = []
     psnrs = []
@@ -395,7 +396,7 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
     # track metrics
     if 'tailor_losses' in kwargs:
         kwargs['tailor_losses'].append(tailor_losses)
-    if 'true_tailor_losses' in kwargs and opt.tailor and opt.pde_emb != 'pde_const_emb':
+    if 'true_tailor_losses' in kwargs and opt.tailor and opt.emb_type != 'pde_const_emb':
         kwargs['true_tailor_losses'].append(true_tailor_losses)
 
     if all(m in kwargs for m in ('tailor_ssims', 'tailor_psnrs', 'tailor_mses')):
