@@ -101,15 +101,16 @@ class TwoDReacDiff_MultiParam(object):
         if shuffle:
             print('shuffling dataset')
             random.Random(1612).shuffle(self.seqs)
-        if length > 0:
-            print(f'trimming dataset from length {len(self.seqs)} to {length}')
-            self.seqs = [seq[:length] for seq in self.seqs]
+        if num_param_combinations > 0:
+            print(f'trimming dataset from length {len(self.seqs)} to {num_param_combinations}')
+            self.seqs = self.seqs[:num_param_combinations]
+        #split data into train and val according to parameters
         if train:
-            self.seqs = [seq[:int(len(seq)*percent_train)] for seq in self.seqs]
+            self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
         else:
-            self.seqs = [seq[int((len(seq))*percent_train):] for seq in self.seqs]
+            self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
         
-        print(f"Initialized {'train' if train else 'test'} dataset with {len(self.seqs)} examples")
+        print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
 
     def extract_params_from_path(self, path):
         name = os.path.basename(path)
@@ -121,23 +122,19 @@ class TwoDReacDiff_MultiParam(object):
 
 
     def __len__(self):
-        if self.train:
-            return self.num_param_combinations if self.num_param_combinations > 0 else len(self.seqs)# only 20 param combinations - test overfitting
-        else:
-            return int(self.num_param_combinations/4) if self.num_param_combinations > 0 else int(len(self.seqs)/4) # number of [parameter, trajectory, window] combinations we see per epoch
+        return len(self.seqs)
+        
               
     def __getitem__(self, index):
         
-        #file = np.random.randint(len(self.seqs))
-        file = index
-        seqs = self.seqs[file] # choose a file (i.e parameter value) from 1372 possibilies
+        param = index
+        seqs = self.seqs[param] # choose a file (i.e parameter value) from 1372 possibilies
         
-        seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 1 (val) or 4 (train) possibilites
+        seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 5 possibilites
 
-        h5_file = self.h5_files[file]
-        h5_path = self.h5_paths[file]
+        h5_file = self.h5_files[param]
+        h5_path = self.h5_paths[param]
         k, du, dv = self.extract_params_from_path(h5_path)
-        
         
         #get data
         try:

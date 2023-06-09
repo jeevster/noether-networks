@@ -701,10 +701,12 @@ for trial_num in range(opt.num_trials):
                 writer.add_scalar(
                     f'Inner Loss/val/{step} Step', value, (epoch + 1))
             #Log true PDE loss
-            for step, value in enumerate(val_true_inner_losses[-1]):
-                writer.add_scalar(
-                    f'True Inner Loss/val/{step} Step', value, (epoch + 1))
-
+            try:
+                for step, value in enumerate(val_true_inner_losses[-1]):
+                    writer.add_scalar(
+                        f'True Inner Loss/val/{step} Step', value, (epoch + 1))
+            except IndexError:
+                pass
             if opt.verbose:
                 print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
             for step, value in enumerate(val_svg_losses[-1]):
@@ -836,9 +838,12 @@ for trial_num in range(opt.num_trials):
             writer.add_scalar(
                 f'Inner Loss/train/{step} Step', value, (epoch + 1))
 
-        for step, value in enumerate(true_inner_losses[-1]):
-            writer.add_scalar(
-                f'True Inner Loss/train/{step} Step', value, (epoch + 1))
+        try:
+            for step, value in enumerate(true_inner_losses[-1]):
+                writer.add_scalar(
+                    f'True Inner Loss/train/{step} Step', value, (epoch + 1))
+        except IndexError:
+            pass
 
         if opt.verbose:
             print(f'\tInner TRAIN loss: {inner_losses[-1]}')

@@ -110,8 +110,7 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
             # x_in = gen_seq[-1].clone().detach()
             # this one seems to work, but is super hacky
             if hasattr(opt, 'stop_grad') and opt.stop_grad:
-                x_in = torch.tensor(
-                    gen_seq[-1].clone().detach().cpu().numpy()).cuda()
+                x_in = torch.cat(gen_seq[-opt.n_past:], dim =1).clone().detach()
             else:
                 # and this one doesn't do stop grad at all
                 #condition on last n_past generated frames

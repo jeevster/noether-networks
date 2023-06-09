@@ -158,7 +158,6 @@ def load_dataset(opt):
 
     elif opt.dataset == '2d_reacdiff_multiparam':
         from data.twod_reacdiff import TwoDReacDiff_MultiParam
-        length = opt.train_set_length + opt.test_set_length
         frame_step = 1
         if hasattr(opt, 'frame_step'):
             frame_step = opt.frame_step
@@ -167,9 +166,8 @@ def load_dataset(opt):
             train=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=(opt.train_set_length/length),
+            percent_train=0.8,
             frame_step=frame_step,
-            length=opt.train_set_length,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window
@@ -179,9 +177,8 @@ def load_dataset(opt):
             train=False,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=(opt.train_set_length/length),
+            percent_train=0.8,
             frame_step=frame_step,
-            length=opt.test_set_length,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window
