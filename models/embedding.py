@@ -107,6 +107,8 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         if self.learned:
             self.paramnet = ParameterNet(
                 self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters).to(self.device)
+            self.paramnet = self.paramnet.apply(lambda t: t.cuda())
+
         else:
             self.paramnet = ConstantLayer_MultiParam()
         # initialize grid for finite differences
