@@ -186,7 +186,7 @@ parser.add_argument('--reload_checkpoint', action='store_true', help='reload lat
 parser.add_argument('--save_checkpoint', action='store_true', help='checkpoint model')
 parser.add_argument('--burgers_emb', action='store_true', help='use burgers embedding')
 parser.add_argument('--advection_emb', action='store_true', help='use advection embedding')
-
+parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
 
 
 opt = parser.parse_args()
@@ -453,7 +453,7 @@ for epoch in range(0, opt.n_epochs):
                 pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
                 # print("pde_value",params)
                 val_loss += torch.abs(pde_value).log10().mean()
-                val_true_loss += torch.abs(true_pde_value + 1e-10).log10().mean()
+                val_true_loss += torch.abs(true_pde_value).log10().mean()
                 nu_pred = pred_params[0]
                 nu = params[0]
                 nu = nu.to(torch.device("cuda"))
@@ -505,7 +505,7 @@ for epoch in range(0, opt.n_epochs):
     for batch_num in tqdm(range(opt.num_train_batch)):
         optimizer.zero_grad()
         pdb.set_trace()
-        data, params = next(testing_batch_generator)
+        data, params = next(training_batch_generator)
         # data = data.reshape(-1, data.shape[-2], data.shape[-1])
         # params = torch.repeat_interleave(params[0],4)
         params = tuple([param.to(torch.device("cuda")) for param in params])
@@ -548,7 +548,7 @@ for epoch in range(0, opt.n_epochs):
     train_param_losses.append(train_param_loss / opt.num_train_batch)
     print("Train PDE Loss: ", train_loss / opt.num_train_batch)
     
-    #write to tensorboard
+    # #write to tensorboard
     writer.add_scalar('val_log_pde_loss', val_losses[-1],(epoch + 1))
     writer.add_scalar('val_log_true_pde_loss', val_true_losses[-1],(epoch + 1))
     writer.add_scalar('val_nu_loss', val_nu_losses[-1],(epoch + 1))
