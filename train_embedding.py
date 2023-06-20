@@ -1,6 +1,6 @@
 import torch
 # This sets the default model weights to float64
-torch.set_default_dtype(torch.float64)  # nopep8
+#torch.set_default_dtype(torch.float64)  # nopep8
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import torch.optim as optim
@@ -11,7 +11,7 @@ import os
 import random
 from torch.utils.data import DataLoader
 import utils
-from utils import svg_crit
+from utils import svg_crit, dump_params_to_yml
 import itertools
 import numpy as np
 import copy
@@ -24,7 +24,6 @@ from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
 from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
-from models.burgers_advection_embeddings import OneDBurgersEmbedding,OneDAdvectionEmbedding
 import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
@@ -211,7 +210,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
-dtype = torch.cuda.DoubleTensor
+dtype = torch.cuda.FloatTensor
 
 
 # --------- tensorboard configs -------------------------------
@@ -224,12 +223,12 @@ if opt.tailor:
     elif opt.pde_const_emb:
         tailor_str = 'PDE_Const'
 
-write_dir = os.path.join(opt.log_dir,
+save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
-writer = SummaryWriter(write_dir)
+writer = SummaryWriter(save_dir)
 #dump params to yml
-dump_params_to_yml(opt, write_dir)
+dump_params_to_yml(opt, save_dir)
 
 if opt.tailor:
     max_tailor_steps = opt.num_inner_steps + 1
