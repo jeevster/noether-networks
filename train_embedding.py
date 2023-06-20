@@ -18,12 +18,12 @@ import copy
 import higher
 from datetime import datetime
 from torch.utils.tensorboard.summary import hparams
-
+from utils import dump_params_to_yml
 from models.forward import predict_many_steps, tailor_many_steps
 from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
-from models.embedding import ConservedEmbedding, EncoderEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
+from models.embedding import ConservedEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
 from models.burgers_advection_embeddings import OneDBurgersEmbedding,OneDAdvectionEmbedding
 import models.lstm as lstm_models
 
@@ -187,7 +187,7 @@ parser.add_argument('--reload_checkpoint', action='store_true', help='reload lat
 parser.add_argument('--save_checkpoint', action='store_true', help='checkpoint model')
 parser.add_argument('--burgers_emb', action='store_true', help='use burgers embedding')
 parser.add_argument('--advection_emb', action='store_true', help='use advection embedding')
-parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
+# parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
 
 
 opt = parser.parse_args()
@@ -448,14 +448,15 @@ for epoch in range(0, opt.n_epochs):
         with torch.no_grad():
             for batch_num in tqdm(range(opt.num_val_batch)):
                 data, params = next(testing_batch_generator)
+                # pdb.set_trace()
                 # data = data.reshape(-1, data.shape[-2], data.shape[-1])
                 # params = torch.repeat_interleave(params[0],4)
                 # rep = np.repeat([param for param in params],4)
-                pdb.set_trace()
+                # pdb.set_trace()
                 params = tuple([param.to(torch.device("cuda")) for param in params])
-                # print("params", params,data.shape)
+                # print("params", params)
                 pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-                # print("pde_value",params)
+                print("pred_params",pred_params)
                 val_loss += torch.abs(pde_value).log10().mean()
                 val_true_loss += torch.abs(true_pde_value).log10().mean()
                 nu_pred = pred_params[0]
@@ -508,7 +509,7 @@ for epoch in range(0, opt.n_epochs):
 
     for batch_num in tqdm(range(opt.num_train_batch)):
         optimizer.zero_grad()
-        pdb.set_trace()
+        # pdb.set_trace()
         data, params = next(training_batch_generator)
         # data = data.reshape(-1, data.shape[-2], data.shape[-1])
         # params = torch.repeat_interleave(params[0],4)
