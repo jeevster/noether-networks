@@ -101,14 +101,22 @@ class TwoDReacDiff_MultiParam(object):
         if shuffle:
             print('shuffling dataset')
             random.Random(1612).shuffle(self.seqs)
+            random.Random(1612).shuffle(self.h5_paths)
+            random.Random(1612).shuffle(self.h5_files)
         if num_param_combinations > 0:
             print(f'trimming dataset from length {len(self.seqs)} to {num_param_combinations}')
             self.seqs = self.seqs[:num_param_combinations]
+            self.h5_paths = self.h5_paths[:num_param_combinations]
+            self.h5_files = self.h5_files[:num_param_combinations]
         #split data into train and val according to parameters
         if train:
             self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
+            self.h5_paths = self.h5_paths[:int(len(self.h5_paths)*percent_train)]
+            self.h5_files = self.h5_files[:int(len(self.h5_files)*percent_train)]
         else:
             self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
+            self.h5_paths = self.h5_paths[int(len(self.h5_paths)*percent_train):]
+            self.h5_files = self.h5_files[int(len(self.h5_files)*percent_train):]
         
         print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
 
@@ -129,9 +137,9 @@ class TwoDReacDiff_MultiParam(object):
         
         param = index
         seqs = self.seqs[param] # choose a file (i.e parameter value) from 1372 possibilies
-        
         seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 5 possibilites
 
+        #get the corresponding trajectory
         h5_file = self.h5_files[param]
         h5_path = self.h5_paths[param]
         k, du, dv = self.extract_params_from_path(h5_path)
