@@ -183,7 +183,62 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window
         )
-
+    elif opt.dataset == '1d_burgers_multiparam':
+        from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam
+        frame_step = 1
+        if hasattr(opt, 'frame_step'):
+            frame_step = opt.frame_step
+        train_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=True,
+            burgers = True,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
+        )
+        test_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=False,
+            burgers = True,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
+        )
+    elif opt.dataset == '1d_advection_multiparam':
+        from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam
+        frame_step = 1
+        if hasattr(opt, 'frame_step'):
+            frame_step = opt.frame_step
+        train_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=True,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
+        )
+        test_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=False,
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window
+        )
     else:
         raise ValueError(
             'Only "phys101" and "2d_reacdiff" are supported. Other datasets are available in the original SVG repo.'
