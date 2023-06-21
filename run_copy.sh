@@ -1,13 +1,13 @@
 #!/bin/bash
  
-DATADIR=/data/nithinc/pdebench/advection
+DATADIR=/data/divyam123/fenics_fixed
 
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
 python train_embedding.py \
 --image_width 128 \
 --g_dim 128 \
 --z_dim 64 \
---dataset 1d_advection_multiparam \
+--dataset 1d_burgers_multiparam \
 --data_root $DATADIR \
 --num_trials 1 \
 --n_past 2 \
@@ -40,10 +40,10 @@ python train_embedding.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
---log_dir ./results_summer/pderesidualloss_onlylearnDu_lr1e-3_bs16_use_partials_fixedpderesidual/ \
+--log_dir ./results_summer_new/burgers/ \
 --channels 1 \
 --tailor \
 --random_weights \
 --inner_opt_all_model_weights \
 --batch_norm_to_group_norm \
---advection \
+--burgers \
