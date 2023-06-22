@@ -136,7 +136,7 @@ class TwoDReacDiff_MultiParam(object):
     def __getitem__(self, index):
         
         param = index
-        seqs = self.seqs[param] # choose a file (i.e parameter value) from 1372 possibilies
+        seqs = self.seqs[param] # choose a file (i.e parameter value)
         seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 5 possibilites
 
         #get the corresponding trajectory

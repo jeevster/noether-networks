@@ -17,16 +17,17 @@ from utils import svg_crit
 
 def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None, emb_mode = 'emb'):
     # compute embeddings for sequence
+
     if num_emb_frames == 1:
         embs = [fmodel(frame, true_params = true_params, mode=emb_mode)[0] for frame in gen_seq]
     elif num_emb_frames >1:
         assert(len(gen_seq) >= num_emb_frames)
         stacked_gen_seq = []
-        for i in range(num_emb_frames, len(gen_seq)):
+        for i in range(num_emb_frames, len(gen_seq)+1):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
         embs = [fmodel(frame, true_params = true_params, mode=emb_mode)[0] for frame in stacked_gen_seq]
-        assert(len(embs) == len(gen_seq) - num_emb_frames)  
+        assert(len(embs) == len(gen_seq) - num_emb_frames + 1)  
     else:
         raise ValueError
 
