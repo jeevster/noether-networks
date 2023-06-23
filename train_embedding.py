@@ -529,7 +529,7 @@ for epoch in range(start_epoch, opt.n_epochs):
 
     for batch_num in tqdm(range(opt.num_train_batch)):
         optimizer.zero_grad()
-        data, params = next(testing_batch_generator)
+        data, params = next(training_batch_generator)
         params = tuple([param.to(torch.device("cuda")) for param in params])
         
         pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
