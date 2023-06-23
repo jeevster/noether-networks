@@ -1,6 +1,6 @@
 import torch
 # This sets the default model weights to float64
-torch.set_default_dtype(torch.float64)  # nopep8
+#torch.set_default_dtype(torch.float64)  # nopep8
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import torch.optim as optim
@@ -11,7 +11,7 @@ import os
 import random
 from torch.utils.data import DataLoader
 import utils
-from utils import svg_crit
+from utils import svg_crit, dump_params_to_yml
 import itertools
 import numpy as np
 import copy
@@ -25,6 +25,7 @@ from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
 from models.embedding import ConservedEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
 from models.burgers_advection_embeddings import OneDBurgersEmbedding,OneDAdvectionEmbedding
+
 import models.lstm as lstm_models
 
 from neuralop.models import FNO, FNO1d
@@ -211,7 +212,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
-dtype = torch.cuda.DoubleTensor
+dtype = torch.cuda.FloatTensor
 
 
 # --------- tensorboard configs -------------------------------
@@ -224,12 +225,12 @@ if opt.tailor:
     elif opt.pde_const_emb:
         tailor_str = 'PDE_Const'
 
-write_dir = os.path.join(opt.log_dir,
+save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
-writer = SummaryWriter(write_dir)
+writer = SummaryWriter(save_dir)
 #dump params to yml
-dump_params_to_yml(opt, write_dir)
+dump_params_to_yml(opt, save_dir)
 
 if opt.tailor:
     max_tailor_steps = opt.num_inner_steps + 1
@@ -456,7 +457,7 @@ for epoch in range(0, opt.n_epochs):
                 params = tuple([param.to(torch.device("cuda")) for param in params])
                 # print("params", params)
                 pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-                print("pred_params",pred_params)
+                print("val_pred_params",pred_params)
                 val_loss += torch.abs(pde_value).log10().mean()
                 val_true_loss += torch.abs(true_pde_value).log10().mean()
                 nu_pred = pred_params[0]
@@ -509,18 +510,16 @@ for epoch in range(0, opt.n_epochs):
 
     for batch_num in tqdm(range(opt.num_train_batch)):
         optimizer.zero_grad()
-        # pdb.set_trace()
         data, params = next(training_batch_generator)
         # data = data.reshape(-1, data.shape[-2], data.shape[-1])
         # params = torch.repeat_interleave(params[0],4)
         params = tuple([param.to(torch.device("cuda")) for param in params])
         pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-        # print("pde_value",pde_value)
         loss = (pde_value).abs().log10().mean()
         true_loss = (true_pde_value).abs().log10().mean()
-        
-        train_loss+=loss
-        train_true_loss +=true_loss
+        # print("val_pred_params",pred_params)        
+        train_loss  += loss
+        train_true_loss += true_loss
         nu_pred = pred_params[0]
         nu = params[0]
         nu = nu.to(torch.device("cuda"))

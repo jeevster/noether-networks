@@ -35,26 +35,31 @@ class OneD_Advection_Burgers_MultiParam(object):
         self.length = length
         self.train = train
         self.h5_paths = glob.glob(f"{self.data_root}/*.hdf5")
-        self.h5_files = [(h5py.File(file, "r"),file) for file in self.h5_paths]
-        self.seqs = self.h5_files
+        self.h5_files = [h5py.File(file, "r") for file in self.h5_paths]
+        self.seqs = [h5py.File(file, "r") for file in self.h5_paths]#self.h5_files
         self.num_param_combinations = num_param_combinations
         self.fixed_ic = fixed_ic
         self.fixed_window = fixed_window
+
         if shuffle:
             print('shuffling dataset')
             random.Random(1612).shuffle(self.seqs)
+            random.Random(1612).shuffle(self.h5_paths)
+            random.Random(1612).shuffle(self.h5_files)
         if num_param_combinations > 0:
             print(f'trimming dataset from length {len(self.seqs)} to {num_param_combinations}')
             self.seqs = self.seqs[:num_param_combinations]
+            self.h5_paths = self.h5_paths[:num_param_combinations]
+            self.h5_files = self.h5_files[:num_param_combinations]
         if train:
-            # pdb.set_trace()
             self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
-            # self.seqs = [seq['tensor'][:int(len(seq['tensor'])*percent_train)] for seq in self.seqs]
-            # self.seqs = [seq['tensor'][:] for seq in self.seqs]
+            self.h5_paths = self.h5_paths[:int(len(self.h5_paths)*percent_train)]
+            self.h5_files = self.h5_files[:int(len(self.h5_files)*percent_train)]
         else:
             self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
-            # self.seqs = [seq['tensor'][int((len(seq['tensor']))*percent_train):] for seq in self.seqs]
-            # self.seqs = [seq['tensor'][:] for seq in self.seqs]
+            self.h5_paths = self.h5_paths[int(len(self.h5_paths)*percent_train):]
+            self.h5_files = self.h5_files[int(len(self.h5_files)*percent_train):]
+
 
         print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
     def extract_params_from_path(self, path):
@@ -66,30 +71,18 @@ class OneD_Advection_Burgers_MultiParam(object):
 
 
     def __len__(self):
-        # if self.train:
-            # return self.num_param_combinations if self.num_param_combinations > 0 else len(self.seqs) #* 4 # only 20 param combinations - test overfitting
-        # else:
-            # return int(self.num_param_combinations/4) if self.num_param_combinations > 0 else int(len(self.seqs)/4) #* 4 # number of [parameter, trajectory, window] combinations we see per epoch
         return len(self.seqs)
     def __getitem__(self, index):
         # pdb.set_trace()        
-        #file = np.random.randint(len(self.seqs))
         param = index
-        # print("len(self.seqs), len(self.h5_files)",len(self.seqs), len(self.seqs))
-        seqs = self.seqs[param][0] # choose a file (i.e parameter value) from 1372 possibilies
+        seqs = self.seqs[param] # choose a file (i.e parameter value) from 1372 possibilies
         random_index = np.random.choice(len(seqs['tensor']))
-        # limit = np.random.choice(len(seqs),1)
-        # print("seq", seqs.shape)
         seq = seqs['tensor'][0] if self.fixed_ic else seqs['tensor'][random_index]#[0]
-        # seq = seqs[0] if self.fixed_ic else seqs[random_index][0]
-        # print("seq", limit)
-        nu = self.extract_params_from_path(self.seqs[param][1])
-        
-        # print(type(np.array(self.seqs[index])), "np.array(self.seqs[index]")
+        nu = self.extract_params_from_path(self.h5_paths[param])
         #get data        
         vid = torch.Tensor(seq).to(torch.float64).to(torch.cuda.current_device())
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
-        start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
+        start = 50 if self.fixed_window else np.random.randint(50, vid.shape[0] - self.seq_len)
         vid = vid[start:start+self.seq_len]
         vid = vid.reshape((vid.shape[0], vid.shape[1], 1))
         
@@ -99,7 +92,7 @@ class OneD_Advection_Burgers_MultiParam(object):
 
 
 
-"""old loader"""
+# """old loader"""
 # class OneD_Advection_Burgers_MultiParam(object):
 #     """Data Loader that loads multiple parameter version of Advection or Burgers ReacDiff dataset"""
 
