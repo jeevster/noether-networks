@@ -36,13 +36,13 @@ python train_embedding.py \
 --only_twenty_degree \
 --frame_step 1 \
 --center_crop 1080 \
---num_emb_frames 5 \
+--num_emb_frames 2 \
 --horiz_flip \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
 --save_checkpoint \
---log_dir ./results_summer/fixedtrainvalsplit_pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_5embframes/ \
+--log_dir ./results_summer/fixedtrainvalsplit_pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_2embframes/ \
 --channels 2 \
 --tailor \
 --random_weights \

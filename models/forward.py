@@ -166,7 +166,7 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
     return gen_seq, mus, logvars, mu_ps, logvar_ps
 
 
-def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='eval', **kwargs):
+def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_higher_grads=True, mode='eval', **kwargs):
     '''
     Perform a round of tailoring.
     '''
@@ -308,7 +308,7 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                     mses.append(mse)
 
                 svg_loss = svg_crit(gen_seq, x, mus, logvars,
-                                    mu_ps, logvar_ps, opt).detach().cpu().item()
+                                    mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
                 svg_losses.append(svg_loss)
 
         # # TODO: remove next two lines
@@ -342,7 +342,7 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
             true_tailor_losses.append(true_tailor_loss.mean().cpu().item())
 
         svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
-                            mu_ps, logvar_ps, opt).detach().cpu().item()
+                            mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
         svg_losses.append(svg_loss)
 
         if 'tailor_ssims' in kwargs:
@@ -370,7 +370,7 @@ def tailor_many_steps(svg_model, x, params, opt, track_higher_grads=True, mode='
                              for fin, orig in zip(final_gen_seq, orig_gen_seq)]
 
             svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
-                                mu_ps, logvar_ps, opt).detach().cpu().item()
+                                mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
             svg_losses.append(svg_loss)
 
             tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,

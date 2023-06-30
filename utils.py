@@ -61,14 +61,33 @@ def svg_kl_crit(mu1, logvar1, mu2, logvar2, opt):
                                       (mu1 - mu2)**2)/(2*torch.exp(logvar2)) - 1/2
     return kld.sum() / opt.batch_size
 
+#pde task loss
+def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
+    if opt.num_emb_frames == 1:
+        embs = [pde_crit(frame, true_params = true_params)[0] for frame in gen_seq]
+    elif opt.num_emb_frames > 1:
+        assert(len(gen_seq) >= opt.num_emb_frames)
+        stacked_gen_seq = []
+        for i in range(opt.num_emb_frames, len(gen_seq)+1):
+            stacked_gen_seq.append(
+                torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1))
+        embs = [pde_crit(frame, true_params = true_params)[0] for frame in stacked_gen_seq]
+        assert(len(embs) == len(gen_seq) - opt.num_emb_frames + 1)  
+    else:
+        raise ValueError
+    return [emb.mean() for emb in embs]
 
-def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, opt):
+def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, opt):
     # svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[opt.n_past:], gt_seq[opt.n_past:]))
 
-    # MSE Loss for Task loss
+    # MSE (data) and PDE (PINN) Loss terms for Task loss
+    svg_pde_losses = svg_pde_crit(gen_seq, params, pde_crit, opt)
     svg_mse_losses = list(svg_mse_crit(gen, gt)
                           for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
-    svg_loss = torch.stack(svg_mse_losses).sum()
+    if opt.pinn_outer_loss: #include both data and pde loss
+        svg_loss = torch.stack([data_loss + pde_loss for data_loss, pde_loss in zip(svg_mse_losses, svg_pde_losses)]).sum()
+    else: #only data loss
+        svg_loss = torch.stack(svg_mse_losses).sum()
 
     # TODO: investigate effect of KL term on tailoring
     svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p

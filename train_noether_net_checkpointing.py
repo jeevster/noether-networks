@@ -67,6 +67,8 @@ parser.add_argument('--num_epochs_per_val', type=int,
                     default=1, help='perform validation every _ epochs')
 parser.add_argument('--tailor', action='store_true',
                     help='if true, perform tailoring')
+parser.add_argument('--pinn_outer_loss', action='store_true',
+                    help='if true, include the (true) PDE residual in the outer loss')
 parser.add_argument('--num_inner_steps', type=int,
                     default=1, help='how many tailoring steps?')
 parser.add_argument('--num_jump_steps', type=int, default=0,
@@ -222,6 +224,9 @@ if opt.tailor:
     elif opt.emb_type == "pde_const_emb":
         tailor_str = 'PDE_Const'
     tailor_str += f'_{opt.num_inner_steps}'
+if opt.pinn_outer_loss:
+    tailor_str+='_PINN_Outer_Loss'
+
 save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
                                     f'_past={opt.n_past}_future={opt.n_future}_tailor={tailor_str}')
@@ -292,44 +297,6 @@ print(f'train_data length: {len(train_data)}')
 print(f'num_train_batch: {opt.num_train_batch}')
 print(f'test_data length: {len(test_data)}')
 print(f'num_val_batch: {opt.num_val_batch}')
-
-
-# --------- init losses ------------------------------------
-def inner_crit(fmodel, gen_seq, mode='mse', num_emb_frames=1, compare_to='prev', emb_mode = 'emb'):
-    # compute embeddings for sequence
-    if num_emb_frames == 1:
-        embs = [fmodel(frame, mode=emb_mode) for frame in gen_seq]
-    elif num_emb_frames == 2:
-        stacked_gen_seq = []
-        for i in range(1, len(gen_seq)):
-            stacked_gen_seq.append(
-                torch.cat((gen_seq[i-1], gen_seq[i]), dim=1))
-        # len(embs) = len(gen_seq) - 1
-        embs = [fmodel(frame, mode=emb_mode) for frame in stacked_gen_seq]
-    else:
-        raise ValueError
-
-    # compute conservation loss
-    if mode == 'mse':
-        # we penalize the pairwise losses
-        if compare_to == 'prev':
-            pairwise_inner_losses = torch.stack([F.mse_loss(
-                embs[t-1], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
-        elif compare_to == 'zero':
-            pairwise_inner_losses = torch.stack([F.mse_loss(
-                embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
-        elif compare_to == 'zero_and_prev':
-            pairwise_inner_losses = torch.stack([F.mse_loss(embs[t-1], embs[t], reduction='none') for t in range(
-                1, len(embs))] + [F.mse_loss(embs[0], embs[t], reduction='none') for t in range(1, len(embs))]).mean(dim=2)
-        else:
-            raise ValueError('must choose prev or zero or zero_and_prev')
-#     elif mode == 'cosine':
-#         # cosine distance is 1 minus cosine similarity
-#         pairwise_inner_losses = torch.stack([1 - F.cosine_similarity(embs[t-1], embs[t]) for t in range(1, len(embs))])
-    else:
-        raise NotImplementedError('please use either "mse" or "cosine" mode')
-    # total inner loss is just the sum of pairwise losses
-    return torch.sum(pairwise_inner_losses, dim=0)
 
 
 # --------- tracking metrics ------------------------------------
@@ -609,7 +576,7 @@ for trial_num in range(opt.num_trials):
                             predict_many_steps(baseline_svg_model, batch, opt, mode='eval',
                                                prior_epses=prior_epses, posterior_epses=posterior_epses)
                         base_outer_loss = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
-                                                   base_mu_ps, base_logvar_ps, opt).mean()
+                                                   base_mu_ps, base_logvar_ps, true_pde_embedding, opt).mean()
 
                 # tailoring pass
                 val_cached_cn = [None]  # cached cn params
@@ -627,7 +594,7 @@ for trial_num in range(opt.num_trials):
                     # Tailor many steps uses opt.tailor to decide whether to tailor or not
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                         # no need for higher grads in val
-                        svg_model, batch, params, opt=opt, track_higher_grads=False,
+                        svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
                         mode='eval',
                         # extra kwargs
                         tailor_losses=val_batch_inner_losses,
@@ -645,7 +612,7 @@ for trial_num in range(opt.num_trials):
                     with torch.no_grad():
                         # compute outer (task) loss
                         outer_loss = svg_crit(
-                            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt).mean()
+                            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt).mean()
 
                     val_outer_loss += outer_loss.detach().cpu().item()
                     if opt.baseline:
@@ -746,7 +713,7 @@ for trial_num in range(opt.num_trials):
                 # rollout, tailoring, rollout
                 # Again, tailor_many_steps uses opt.tailor to decide whether to tailor or not
                 gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
-                    svg_model, batch, params, opt=opt, track_higher_grads=True,
+                    svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=True,
                     mode=train_mode,
                     # extra kwargs
                     tailor_losses=batch_inner_losses,
@@ -762,7 +729,7 @@ for trial_num in range(opt.num_trials):
 
                 # compute task loss
                 outer_loss = svg_crit(
-                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, opt).mean()
+                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt).mean()
 
                 # don't do this
                 if opt.add_inner_to_outer_loss:
