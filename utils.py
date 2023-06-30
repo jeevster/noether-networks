@@ -84,16 +84,16 @@ def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, 
     svg_pde_losses = svg_pde_crit(gen_seq, params, pde_crit, opt)
     svg_mse_losses = list(svg_mse_crit(gen, gt)
                           for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
+    final_mse_loss = torch.stack(svg_mse_losses).sum()
+    final_pde_loss = torch.Tensor([0.])
     if opt.pinn_outer_loss: #include both data and pde loss
-        svg_loss = torch.stack([data_loss + pde_loss for data_loss, pde_loss in zip(svg_mse_losses, svg_pde_losses)]).sum()
-    else: #only data loss
-        svg_loss = torch.stack(svg_mse_losses).sum()
-
+        final_pde_loss = opt.pinn_outer_loss_weight*torch.stack(svg_pde_losses).sum()
+    
     # TODO: investigate effect of KL term on tailoring
-    svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p
-                     in zip(mus, logvars, mu_ps, logvar_ps)]
-    svg_loss += opt.svg_loss_kl_weight * torch.stack(svg_kl_losses).sum()
-    return svg_loss
+    # svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p
+    #                  in zip(mus, logvars, mu_ps, logvar_ps)]
+    # svg_loss += opt.svg_loss_kl_weight * torch.stack(svg_kl_losses).sum()
+    return final_mse_loss, final_pde_loss
 
 
 def load_dataset(opt):

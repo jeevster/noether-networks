@@ -307,9 +307,11 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                     psnrs.append(psnr)
                     mses.append(mse)
 
-                svg_loss = svg_crit(gen_seq, x, mus, logvars,
-                                    mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
-                svg_losses.append(svg_loss)
+                svg_mse_loss, svg_pde_loss = svg_crit(gen_seq, x, mus, logvars,
+                                    mu_ps, logvar_ps, true_pde_embedding, params, opt)
+                svg_mse_loss = svg_mse_loss.detach().cpu().item()
+                svg_pde_loss = svg_pde_loss.detach().cpu().item()
+                svg_losses.append(svg_mse_loss) #only keep data loss for plotting
 
         # # TODO: remove next two lines
         # _cn_beta = list(filter(lambda p: 'beta' in p[0], fmodel.decoder.named_parameters()))
@@ -341,9 +343,11 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                                         compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb').detach()
             true_tailor_losses.append(true_tailor_loss.mean().cpu().item())
 
-        svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
-                            mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
-        svg_losses.append(svg_loss)
+        svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
+                            mu_ps, logvar_ps, true_pde_embedding, params, opt)
+        svg_mse_loss = svg_mse_loss.detach().cpu().item()
+        svg_pde_loss = svg_pde_loss.detach().cpu().item()
+        svg_losses.append(svg_mse_loss) #only keep the data loss for logging
 
         if 'tailor_ssims' in kwargs:
             # compute SSIM for gen_seq batch
@@ -369,9 +373,11 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
             final_gen_seq = [torch.where(mask, fin, orig)
                              for fin, orig in zip(final_gen_seq, orig_gen_seq)]
 
-            svg_loss = svg_crit(final_gen_seq, x, mus, logvars,
-                                mu_ps, logvar_ps, true_pde_embedding, params, opt).detach().cpu().item()
-            svg_losses.append(svg_loss)
+            svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
+                                mu_ps, logvar_ps, true_pde_embedding, params, opt)
+            svg_mse_loss = svg_mse_loss.detach().cpu().item()
+            svg_pde_loss = svg_pde_loss.detach().cpu().item()
+            svg_losses.append(svg_mse_loss) #only keep the data loss for logging
 
             tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames,

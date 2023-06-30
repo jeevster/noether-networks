@@ -44,7 +44,7 @@ python train_noether_net_checkpointing.py \
 --ckpt_outer_loss \
 --ckpt_inner_loss \
 --warmstart_emb_path /home/sanjeevr/noether-networks/results_summer/fixedtrainvalsplit_pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_2embframes/Tue-Jun-20-02.31.39-2023_past=2_future=2_tailor=PDE/best_ckpt_model.pt \
---log_dir ./results_noether_summer/fixedtrainvalsplit_perturbed_experiments_npast=1_nfuture=1/ \
+--log_dir ./results_noether_summer/fixedtrainvalsplit_perturbed_experiments/ \
 --channels 2 \
 --random_weights \
 --inner_opt_all_model_weights \

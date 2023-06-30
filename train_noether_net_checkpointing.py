@@ -68,7 +68,9 @@ parser.add_argument('--num_epochs_per_val', type=int,
 parser.add_argument('--tailor', action='store_true',
                     help='if true, perform tailoring')
 parser.add_argument('--pinn_outer_loss', action='store_true',
-                    help='if true, include the (true) PDE residual in the outer loss')
+                    help='if true, include the (true) PDE residual in outer loss')
+parser.add_argument('--pinn_outer_loss_weight', type=float,
+                    default=1.0, help='weight for PDE residual in outer loss')
 parser.add_argument('--num_inner_steps', type=int,
                     default=1, help='how many tailoring steps?')
 parser.add_argument('--num_jump_steps', type=int, default=0,
@@ -225,7 +227,7 @@ if opt.tailor:
         tailor_str = 'PDE_Const'
     tailor_str += f'_{opt.num_inner_steps}'
 if opt.pinn_outer_loss:
-    tailor_str+='_PINN_Outer_Loss'
+    tailor_str+=f'_PINN_Outer_Loss_Weight={opt.pinn_outer_loss_weight}'
 
 save_dir = os.path.join(opt.log_dir,
                                     str(datetime.now().ctime().replace(' ', '-').replace(':', '.')) +
@@ -575,9 +577,11 @@ for trial_num in range(opt.num_trials):
                         base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
                             predict_many_steps(baseline_svg_model, batch, opt, mode='eval',
                                                prior_epses=prior_epses, posterior_epses=posterior_epses)
-                        base_outer_loss = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
-                                                   base_mu_ps, base_logvar_ps, true_pde_embedding, opt).mean()
-
+                        base_outer_mse_loss, base_outer_pde_loss = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
+                                                   base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
+                        base_outer_mse_loss = base_outer_mse_loss.mean()
+                        base_outer_pde_loss = base_outer_pde_loss.mean()
+                        base_outer_loss = base_outer_mse_loss + base_outer_pde_loss
                 # tailoring pass
                 val_cached_cn = [None]  # cached cn params
                 val_batch_inner_losses = []
@@ -611,12 +615,14 @@ for trial_num in range(opt.num_trials):
 
                     with torch.no_grad():
                         # compute outer (task) loss
-                        outer_loss = svg_crit(
-                            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt).mean()
-
-                    val_outer_loss += outer_loss.detach().cpu().item()
+                        outer_mse_loss, outer_pde_loss = svg_crit(
+                            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
+                        outer_mse_loss = outer_mse_loss.mean()
+                        outer_pde_loss = outer_pde_loss.mean()
+                        outer_loss = outer_mse_loss + outer_pde_loss #total data + PDE loss
+                    val_outer_loss += outer_mse_loss.detach().cpu().item() #only log the data loss
                     if opt.baseline:
-                        baseline_outer_loss += base_outer_loss.detach().cpu().item()
+                        baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
 
                 #SR: want to log inner losses for all tailoring steps, not just the first step
                 val_batch_inner_losses = val_batch_inner_losses[0]
@@ -728,23 +734,25 @@ for trial_num in range(opt.num_trials):
                 )
 
                 # compute task loss
-                outer_loss = svg_crit(
-                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt).mean()
-
+                outer_mse_loss, outer_pde_loss = svg_crit(
+                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
+                outer_mse_loss = outer_mse_loss.mean()
+                outer_pde_loss = outer_pde_loss.mean()
+                outer_loss = outer_mse_loss + outer_pde_loss
                 # don't do this
                 if opt.add_inner_to_outer_loss:
                     inner_loss_component = inner_crit(svg_model, gen_seq, mode='mse',
                                                       num_emb_frames=opt.num_emb_frames,
                                                       compare_to=opt.inner_crit_compare_to).mean()
                     print(
-                        f'outer_loss = {outer_loss.detach().cpu().numpy().item()}')
+                        f'outer_loss = {outer_mse_loss.detach().cpu().numpy().item()}')
                     print(
                         f'inner_loss = {inner_loss_component.detach().cpu().numpy().item()}')
                     outer_loss += inner_loss_component
 
-                train_outer_loss += outer_loss.detach().cpu().item()
+                train_outer_loss += outer_mse_loss.detach().cpu().item() #only keep data loss for logging
 
-                # Compute gradients of task loss
+                # Compute gradients of task loss (including both PDE and MSE loss)
                 outer_loss.backward()
                 if opt.num_inner_steps > 0:
                     # gradient clipping, and tracking the grad norms
