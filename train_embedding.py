@@ -535,7 +535,7 @@ for epoch in range(start_epoch, opt.n_epochs):
         pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
 
         loss = (pde_value).abs().log10().mean()
-        loss = loss.detach() if opt.param_loss
+        loss = loss.detach() if opt.param_loss else loss
         true_loss = (true_pde_value).abs().log10().mean()
         
         train_loss+=loss
