@@ -1,6 +1,7 @@
 # Data stuff
 data/
 results/
+results_noether_summer/
 diffusion-reaction/
 results_summer/
 # Byte-compiled / optimized / DLL files

@@ -41,8 +41,9 @@ python train_embedding.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
+--param_loss \
 --save_checkpoint \
---log_dir ./results_summer/fixedtrainvalsplit_pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_2embframes/ \
+--log_dir ./results_summer/TEST/ \
 --channels 2 \
 --tailor \
 --random_weights \
