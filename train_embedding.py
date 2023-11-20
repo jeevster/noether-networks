@@ -511,11 +511,10 @@ for epoch in range(0, opt.n_epochs):
     for batch_num in tqdm(range(opt.num_train_batch)):
         optimizer.zero_grad()
         data, params = next(training_batch_generator)
-        # data = data.reshape(-1, data.shape[-2], data.shape[-1])
-        # params = torch.repeat_interleave(params[0],4)
         params = tuple([param.to(torch.device("cuda")) for param in params])
         pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
         loss = (pde_value).abs().log10().mean()
+        loss = loss.detach() if opt.param_loss else loss
         true_loss = (true_pde_value).abs().log10().mean()
         # print("val_pred_params",pred_params)        
         train_loss  += loss

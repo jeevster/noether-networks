@@ -14,7 +14,6 @@ python train_noether_net_checkpointing.py \
 --n_future 2 \
 --num_threads 0 \
 --ckpt_every 10 \
---tailor \
 --inner_crit_mode mse \
 --inner_crit_compare_to pde_log \
 --enc_dec_type vgg \
@@ -44,8 +43,8 @@ python train_noether_net_checkpointing.py \
 --save_checkpoint \
 --ckpt_outer_loss \
 --ckpt_inner_loss \
---warmstart_emb_path /home/sanjeevr/noether-networks/results_summer/pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_2embframes/Mon-Jun-12-17.15.29-2023_past=2_future=2_tailor=PDE/best_ckpt_model.pt \
---log_dir ./results_noether_summer/TEST/ \
+--warmstart_emb_path /home/sanjeevr/noether-networks/results_summer/fixedtrainvalsplit_pderesidualloss_onlylearnk_lr1e-3_bs16_use_partials_fixedpderesidual_2embframes/Tue-Jun-20-02.31.39-2023_past=2_future=2_tailor=PDE/best_ckpt_model.pt \
+--log_dir ./results_noether_summer/fixedtrainvalsplit_perturbed_experiments/ \
 --channels 2 \
 --random_weights \
 --inner_opt_all_model_weights \
