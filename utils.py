@@ -183,6 +183,7 @@ def load_dataset(opt):
         train_data = TwoDReacDiff_MultiParam(
             data_root=opt.data_root,
             train=True,
+            shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
@@ -194,6 +195,7 @@ def load_dataset(opt):
         test_data = TwoDReacDiff_MultiParam(
             data_root=opt.data_root,
             train=False,
+            shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
@@ -210,7 +212,8 @@ def load_dataset(opt):
         train_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
             train=True,
-            burgers = True,
+            pde = 'burgers',
+            shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
@@ -222,7 +225,8 @@ def load_dataset(opt):
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
             train=False,
-            burgers = True,
+            pde = 'burgers',
+            shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
@@ -239,24 +243,28 @@ def load_dataset(opt):
         train_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
             train=True,
+            pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
-            fixed_window = opt.fixed_window
+            fixed_window = opt.fixed_window,
+            shuffle=True
         )
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
             train=False,
+            pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
             percent_train=0.8,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
-            fixed_window = opt.fixed_window
+            fixed_window = opt.fixed_window,
+            shuffle=True,
         )
     else:
         raise ValueError(
@@ -762,3 +770,20 @@ def modernize_model(old_model_path, opt):
         embedding = ConservedEmbedding(emb_dim=opt.emb_dim, image_width=opt.image_width,
                                        nc=opt.num_emb_frames * opt.channels)
     return SVGModel(encoder, frame_predictor, decoder, prior, posterior, embedding).cuda()
+
+def compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, true_pde_embedding, params, opt):
+    if opt.learned_pinn_loss and opt.pinn_outer_loss:
+        outer_mse_loss, outer_pde_loss = svg_crit(
+            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
+        
+    else:
+        outer_mse_loss, outer_pde_loss = svg_crit(
+            gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
+        outer_mse_loss = outer_mse_loss.mean()
+        outer_pde_loss = outer_pde_loss.mean()
+    if opt.no_data_loss and opt.pinn_outer_loss:
+        outer_loss = outer_pde_loss #total data + PDE loss                
+    else:
+        outer_loss = outer_mse_loss + outer_pde_loss
+    
+    return outer_loss, outer_mse_loss, outer_pde_loss

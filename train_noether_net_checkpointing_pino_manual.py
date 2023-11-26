@@ -19,7 +19,7 @@ import higher
 from datetime import datetime
 from torch.utils.tensorboard.summary import hparams
 import pdb
-from models.forward_pino_manual import dont_tailor_many_steps, tailor_many_steps, pino_style_tailoring
+from models.forward import dont_tailor_many_steps#, tailor_many_steps, pino_style_tailoring
 from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
@@ -194,7 +194,24 @@ parser.add_argument('--fixed_ic', action='store_true')
 parser.add_argument('--fixed_window', action='store_true')
 parser.add_argument('--learned_pinn_loss', action = 'store_true')
 parser.add_argument('--no_data_loss',action = 'store_true')
-parser.add_argument('--add_general_learnable', action='store_true')
+parser.add_argument('--add_general_learnable', action='store_true',
+                    help='use FNO in tailoring step')
+parser.add_argument('--param_loss', action='store_true',
+                    help='use param_loss for embedding network')
+parser.add_argument('--use_embedding', action='store_true',
+                    help='use the loss from g network in backprop')
+parser.add_argument('--teacher_forcing', action='store_true',
+                    help='use teacher forcing')
+parser.add_argument('--use_true_params_val', action = 'store_true',
+                    help='use true params in dynamics model during validation')
+parser.add_argument('--use_true_params_train', action = 'store_true',
+                    help ='use predicted params in dynamics model during training')
+parser.add_argument('--use_cn', action = 'store_true',
+                    help ='use conditional normalization')
+parser.add_argument('--conditioning', action = 'store_true',
+                    help ='to condition on parameters')
+parser.add_argument('--use_adam_inner_opt', action = 'store_true',
+                    help ='to use adam as inner optimizer')
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
 opt = parser.parse_args()

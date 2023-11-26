@@ -212,7 +212,8 @@ parser.add_argument('--use_cn', action = 'store_true',
                     help ='use conditional normalization')
 parser.add_argument('--conditioning', action = 'store_true',
                     help ='to condition on parameters')
-
+parser.add_argument('--use_adam_inner_opt', action = 'store_true',
+                    help ='to use adam as inner optimizer')
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
 opt = parser.parse_args()
@@ -614,9 +615,8 @@ for trial_num in range(opt.num_trials):
 
     # TODO NC: I'm pretty sure none of this needs to be changed since we're using identity now.
 
-    # Init outer optimizer
-    emb_params = [p[1] for p in svg_model.emb.named_parameters() if not (
-        'gamma' in p[0] or 'beta' in p[0])]
+    # Init 'inner' optimizer
+    emb_params = [p[1] for p in svg_model.emb.named_parameters() if not ('gamma' in p[0] or 'beta' in p[0])]
 
     # Dont do this
     if opt.encoder_emb and not opt.optimize_emb_enc_params:
@@ -693,6 +693,8 @@ for trial_num in range(opt.num_trials):
 
 
 
+
+
     min_val_outer_loss = float('inf')
     min_val_inner_loss = float('inf')
     min_val_svg_loss = float('inf')
@@ -727,7 +729,11 @@ for trial_num in range(opt.num_trials):
         epoch_svg_losses = []
         epoch_val_svg_losses = []
         svg_model.eval()
-
+    
+        batch_params = []
+        batch_sols = []
+        val_batch_params = []
+        val_batch_sols = []
         # validation
         if epoch % opt.num_epochs_per_val == 0:
             print(f'Validation {epoch} Epoch')
@@ -736,12 +742,15 @@ for trial_num in range(opt.num_trials):
             baseline_outer_loss = 0.
 
             svg_model.eval()
+            
+            val_cn_diffs = [[],[],[]]
+            val_normal_diffs = [[],[],[]]
 
             for batch_num in tqdm(range(opt.num_val_batch)):
                 # pdb.set_trace()
-                batch, params = next(testing_batch_generator)
-                params = tuple([param.to(torch.cuda.current_device()) for param in params])
-                # pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
+                # batch, params = next(testing_batch_generator)
+                # params = tuple([param.to(torch.cuda.current_device()) for param in params])
+
                 with torch.no_grad():
                     # we optionally evaluate a baseline (untailored) model for comparison
                     prior_epses = []
@@ -778,17 +787,23 @@ for trial_num in range(opt.num_trials):
                 val_nu_var =  0
                 val_rho_loss = 0
 
-                val_cn_diffs = []
-                val_normal_diffs = []
+
                 for batch_step in range(opt.num_jump_steps + 1):
                     # jump steps are effectively inner steps that have a single higher innerloop_ctx per
                     # iteration, which allows for many inner steps during training without running
                     # into memory issues due to storing the whole dynamic computational graph
                     # associated with unrolling the sequence in the inner loop for many steps
                     # perform tailoring (autoregressive prediction, tailoring, predict again)
-                    pdb.set_trace()
+                    # pdb.set_trace()
+                    # len
+                    batch, params = next(testing_batch_generator)
                     params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
                     batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
+                    # batch -> length npast + nfut [(16,1,1024,1)]
+                    # [].append(a) ->
+                    val_batch_sols.extend([torch.sum(torch.norm(data,dim = (2,3))[:,0]) / (len(batch) * opt.batch_size) for data in batch])
+                    val_batch_params.extend([torch.norm(param.to(torch.device("cuda")).to(torch.float64)) for param in params])
+                    
                     if opt.use_embedding:
                         stacked_batch = torch.stack(batch[:opt.num_emb_frames], dim =1)
                         pde_value, true_pde_value, pred_params = outer_embedding(stacked_batch, return_params = True, true_params = params)
@@ -832,11 +847,12 @@ for trial_num in range(opt.num_trials):
                         val_inner_lr=val_inner_lr,
                         svg_losses=val_batch_svg_losses,
                         only_cn_decoder=opt.only_cn_decoder,
-                        cn_norm_diff = val_cn_diffs,
-                        normal_norm_diff = val_normal_diffs,
+                        cn_norm_tracker = val_cn_diffs,
+                        normal_norm_tracker = val_normal_diffs,
                         # fstate_dict=val_fstate_dict,
                         cached_cn=val_cached_cn,
-                        load_cached_cn=(batch_step != 0),adam_inner_opt = False,
+                        load_cached_cn=(batch_step != 0),
+                        adam_inner_opt = opt.use_adam_inner_opt,
                         phi_hat = None if opt.conditioning == False else phi_hat
                     )
 
@@ -928,11 +944,16 @@ for trial_num in range(opt.num_trials):
             writer.add_scalar('Outer Optimizing Loss/val', val_outer_optimizing_losses[-1],
                               (epoch + 1))
 
-            if opt.use_cn:
-                writer.add_scalar('cn weights mean/val/0', val_cn_diffs[0], epoch + 1)
-                writer.add_scalar('normal weights mean/val/0', val_normal_diffs[0], epoch + 1)
-                writer.add_scalar('cn weights mean/val/1', val_cn_diffs[-1], epoch + 1)
-                writer.add_scalar('normal weights mean/val/1', val_normal_diffs[-1], epoch + 1)
+            # if opt.use_cn:
+            # pdb.set_trace()
+            writer.add_scalar('cn weights norm/val/before', sum(val_cn_diffs[0]), epoch + 1 )
+            writer.add_scalar('cn weights norm/val/after', sum(val_cn_diffs[1]), epoch + 1)
+            writer.add_scalar('cn weights norm/val/diff', sum(val_cn_diffs[2]), epoch + 1)
+            writer.add_scalar('normal weights norm/val/before', sum(val_normal_diffs[0]), epoch + 1)
+            writer.add_scalar('normal weights norm/val/after', sum(val_normal_diffs[1]), epoch + 1)
+            writer.add_scalar('normal weights norm/val/diff', sum(val_normal_diffs[2]), epoch + 1)
+            writer.add_scalar('param norm/val', sum(val_batch_params) / len(val_batch_params), epoch + 1)
+            writer.add_scalar('solution norm/val', sum(val_batch_sols) / len(val_batch_sols), epoch + 1)
 
             if opt.baseline:
                 writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
@@ -1003,18 +1024,20 @@ for trial_num in range(opt.num_trials):
 
         print(f'Train {epoch} Epoch')
 
-        train_cn_diffs = []
-        train_normal_diffs = []
+        train_cn_diffs = [[],[],[]]
+        train_normal_diffs = [[],[],[]]
         train_loss = 0.
         train_true_loss = 0#torch.tensor(0, requires_grad = False).to(torch.device("cuda"))
         train_nu_loss = 0#torch.tensor(0, requires_grad = False).to(torch.device("cuda"))
         train_param_loss = 0
         train_nu_mean = 0#torch.tensor(0, requires_grad = False).to(torch.device("cuda"))
         train_nu_var = 0#torch.tensor(0, requires_grad = False)
+        train_param_norm = 0
+        train_solution_norm = 0
         for batch_num in tqdm(range(opt.num_train_batch)):
             # pdb.set_trace()
-            batch, params = next(training_batch_generator)
-            params = tuple([param.to(torch.cuda.current_device()) for param in params])
+            # batch, params = next(training_batch_generator)
+            # params = tuple([param.to(torch.cuda.current_device()) for param in params])
             train_mode = 'eval' if opt.no_teacher_force else 'train'
             # tailoring pass
             cached_cn = [None]  # cached cn params
@@ -1025,13 +1048,18 @@ for trial_num in range(opt.num_trials):
             batch_true_inner_param_losses = []
             batch_inner_gain = []
             batch_true_inner_gain = []
+
             for batch_step in range(opt.num_jump_steps + 1):
                 # optimizer.zero_grad()
+                # pdb.set_trace()
                 batch, params = next(training_batch_generator)
                 batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
                 params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
+                batch_sols.extend([torch.sum(torch.norm(data,dim = (2,3))[:,0]) / (len(batch) * opt.batch_size) for data in batch])
+                batch_params.extend([torch.norm(param.to(torch.device("cuda")).to(torch.float64)) for param in params])
+
                 if opt.use_embedding:
-                    print("using embedding")
+                    # print("using embedding")
                     stacked_batch = torch.stack(batch[:opt.num_emb_frames], dim =1)
                     pde_value, true_pde_value, pred_params = outer_embedding(stacked_batch, return_params = True, true_params = params)
                     # print("pde_value",pde_value)
@@ -1066,17 +1094,14 @@ for trial_num in range(opt.num_trials):
                     else: 
                         enforcing_score  = -1
                 if opt.conditioning:
-                    if  opt.teacher_forcing and enforcing_score < 0.5:
-                        print("predicted")
+                    if  opt.teacher_forcing and enforcing_score < 0.5 and (opt.use_embedding):
                         phi_hat = torch.tile(pred_params[0][:,None,None,None], dims = (1,1,1024,1))
-                    elif opt.teacher_forcing and enforcing_score >= 0.5:
+                    elif opt.teacher_forcing and enforcing_score >= 0.5  and (opt.use_embedding):
                         phi_hat = torch.tile(params[0][:,None,None,None], dims = (1,1,1024,1))
-                    elif (not opt.teacher_forcing) and opt.use_true_params_train:
+                    elif (not opt.teacher_forcing) and opt.use_true_params_train and  not (opt.use_embedding):
                         phi_hat = torch.tile(params[0][:,None,None,None], dims = (1,1,1024,1))
                     elif (not opt.teacher_forcing) and (not opt.use_true_params_train) and (opt.use_embedding):
-                        print("predicted")
                         phi_hat = torch.tile(pred_params[0][:,None,None,None], dims = (1,1,1024,1))
-
 
                 # batch = [torch.cat((data, phi_hat),axis = 1) for data in batch]
                 # Tailor many steps uses opt.tailor to decide whether to tailor or not
@@ -1099,10 +1124,11 @@ for trial_num in range(opt.num_trials):
                                                             reuse_lstm_eps=opt.reuse_lstm_eps,
                                                             svg_losses=batch_svg_losses,
                                                             only_cn_decoder=opt.only_cn_decoder,
-                                                            cn_norm_diff = train_cn_diffs,
-                                                            normal_norm_diff = train_normal_diffs,
+                                                            cn_norm_tracker = train_cn_diffs,
+                                                            normal_norm_tracker = train_normal_diffs,
                                                             # fstate_dict=train_fstate_dict,
-                                                            cached_cn=cached_cn,adam_inner_opt = False,
+                                                            cached_cn=cached_cn,
+                                                            adam_inner_opt = opt.use_adam_inner_opt,
                                                             load_cached_cn=(batch_step != 0),
                                                             phi_hat = None if opt.conditioning == False else phi_hat
                                                         )
@@ -1215,17 +1241,19 @@ for trial_num in range(opt.num_trials):
 
         outer_losses.append(train_outer_loss / (opt.num_train_batch))
         outer_optimizing_losses.append(train_outer_optimizing_loss / (opt.num_train_batch))
-        writer.add_scalar('Outer Loss/train', outer_losses[-1],
-                          (epoch + 1))
-        writer.add_scalar('Outer Optimizing Loss/train', outer_optimizing_losses[-1],
-                          (epoch + 1))
+        writer.add_scalar('Outer Loss/train', outer_losses[-1],(epoch + 1))
+        writer.add_scalar('Outer Optimizing Loss/train', outer_optimizing_losses[-1],(epoch + 1))
+        # if opt.use_cn and len(train_cn_diffs[0]) != 0:
+        writer.add_scalar('cn weights norm/train/before', sum(train_cn_diffs[0]), epoch + 1)
+        writer.add_scalar('cn weights norm/train/after', sum(train_cn_diffs[1]), epoch + 1)
+        writer.add_scalar('cn weights norm/train/diff', sum(train_cn_diffs[2]), epoch + 1)
+        writer.add_scalar('normal weights norm/train/before', sum(train_normal_diffs[0]), epoch + 1)
+        writer.add_scalar('normal weights norm/train/after', sum(train_normal_diffs[1]), epoch + 1)
+        writer.add_scalar('normal weights norm/train/after', sum(train_normal_diffs[2]), epoch + 1)
+        writer.add_scalar('param norm/train', sum(batch_params) / len(batch_params), epoch + 1)
+        writer.add_scalar('solution norm/train', sum(batch_sols) / len(batch_params), epoch + 1)
 
-        if opt.use_cn:
-            writer.add_scalar('cn weights mean/train/0', train_cn_diffs[-2], epoch + 1)
-            writer.add_scalar('normal weights mean/train/0', train_normal_diffs[-2], epoch + 1)
 
-            writer.add_scalar('cn weights mean/train/1', train_cn_diffs[-1], epoch + 1)
-            writer.add_scalar('normal weights mean/train/1', train_normal_diffs[-1], epoch + 1)
 
         if opt.tailor:
             for step, value in enumerate(inner_losses[-1]):
