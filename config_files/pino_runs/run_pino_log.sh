@@ -1,14 +1,14 @@
 #!/bin/bash
  
 DATADIR=/data/divyam123/advection_log_space_res_1024
-
+# DATADIR=/data/nithinc/pdebench/new_parameters/2D/ReactionDiffusion
 #changes relative to vanilla Noether: --inner_opt_all_model_weights, no prior/posterior so no kl loss
 # python train_noether_net_checkpointing_non_meta_2.py \
 # --emb_type pde_const_emb \
 # --image_width 128 \
 # --g_dim 128 \
 # --z_dim 64 \
-# --dataset 1d_advection_multiparam \
+# --dataset 1d_advection_multiparam \ 2d_reacdiff_multiparam \
 # --data_root $DATADIR \
 # --num_trials 1 \
 # --n_past 2 \
@@ -41,26 +41,21 @@ DATADIR=/data/divyam123/advection_log_space_res_1024
 # --num_learned_parameters 1 \
 # --use_partials \
 # --log_dir ./results_summer_new/advection/2d_settings/no_pretraining \
-# --channels 1 \
+# --channels 1 \--ckpt_every 10 \
 # --tailor \
-# --random_weights \
+# --random_weights \--ckpt_outer_loss \
+# --ckpt_inner_loss \
 # --inner_opt_all_model_weights \
 # --batch_norm_to_group_norm \
 # --advection_emb \
 # --save_checkpoint \
 # --no_data_loss \
-# --save_checkpoint \
-# --ckpt_outer_loss \
-# --ckpt_inner_loss \
 # --use_embedding \ --inner_opt_all_model_weights \ 
 # --pinn_outer_loss \ use_true_params_train\ --use_adam_inner_opt \ --use_cn \
 # --teacher_forcing \ --param_loss \ inner_opt_all_model_weights \
-python train_noether_net_checkpointing_non_meta_2.py \
---conditioning \
+python train_noether_net_checkpointing_pino_manual.py \
+--outer_loss_choice log \
 --pinn_outer_loss \
---use_true_params_train \
---use_true_params_val \
---norm instance_norm \
 --inner_opt_all_model_weights \
 --emb_type pde_const_emb \
 --image_width 128 \
@@ -69,10 +64,9 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --dataset 1d_advection_multiparam \
 --data_root $DATADIR \
 --num_trials 1 \
---n_past 1 \
---n_future 10 \
+--n_past 2 \
+--n_future 2 \
 --num_threads 0 \
---ckpt_every 10 \
 --inner_crit_mode mse \
 --inner_crit_compare_to pde_log \
 --enc_dec_type vgg \
@@ -81,7 +75,8 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --fno_width 64 \
 --fno_layers 3 \
 --emb_dim 64 \
---batch_size 16 \
+--val_batch_size 1 \
+--train_batch_size 16 \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
 --n_epochs 200 \
@@ -98,7 +93,8 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
---log_dir /data/divyam123/results_noether_summer/best_results/non_meta_baseline/conditioning_comp/_true \
+--save_checkpoint \
+--log_dir /data/divyam123/results_noether_summer/best_results/non_meta_baseline/PINO_NEW_LOSS_OP/pino_log \
 --warmstart_emb_path best_ckpt_model_advection.pt \
 --channels 1 \
 --random_weights \

@@ -36,7 +36,7 @@ DATADIR=/data/nithinc/pdebench/new_parameters/2D/ReactionDiffusion
 #'2d_reacdiff_multiparam':
 # --warmstart_emb_path best_ckpt_model.pt \
 # --pinn_outer_loss \
-
+#--warmstart_emb_path best_ckpt_model.pt \
 python train_noether_net_checkpointing_non_meta_2.py \
 --pinn_outer_loss \
 --emb_type pde_const_emb \
@@ -79,7 +79,6 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --ckpt_outer_loss \
 --ckpt_inner_loss \
 --log_dir /data/divyam123/results_noether_summer/2d_react_diff/pretrained_embedding_PINO_manual/ \
---warmstart_emb_path best_ckpt_model.pt \
 --channels 2 \
 --random_weights \
 --inner_opt_all_model_weights \

@@ -53,9 +53,11 @@ DATADIR=/data/divyam123/advection_log_space_res_1024
 # --pinn_outer_loss \ use_true_params_train\ --use_adam_inner_opt \ --use_cn \
 # --teacher_forcing \ --param_loss \ inner_opt_all_model_weights \
 python train_noether_net_checkpointing_non_meta_2.py \
+--norm batch_norm \
+--use_cn \
 --pinn_outer_loss \
---inner_opt_all_model_weights \
 --use_adam_inner_opt \
+--cn_demo \
 --emb_type pde_const_emb \
 --image_width 128 \
 --g_dim 128 \
@@ -75,7 +77,7 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --fno_width 64 \
 --fno_layers 3 \
 --emb_dim 64 \
---batch_size 1 \
+--batch_size 16 \
 --num_inner_steps 1 \
 --num_jump_steps 0 \
 --n_epochs 200 \
@@ -95,7 +97,7 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --save_checkpoint \
 --ckpt_outer_loss \
 --ckpt_inner_loss \
---log_dir /data/divyam123/results_noether_summer/best_results/non_meta_baseline/cn_adam/non_cn \
+--log_dir /data/divyam123/results_noether_summer/best_results/non_meta_baseline/cn_adam/batch_norm \
 --warmstart_emb_path best_ckpt_model_advection.pt \
 --channels 1 \
 --random_weights \

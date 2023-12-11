@@ -102,6 +102,18 @@ class ConstantLayer(nn.Module):
     def forward(self, x):
         b_size = x.shape[0]
         return self.const_tensor.expand(b_size, self.num_constants)
+class ConstantLayer_MultiParam(nn.Module):
+    '''takes in a constant value and returns it (batched)'''
+
+    def __init__(self) -> None:
+        super().__init__()
+        
+    def forward(self, x, *constants):
+        b_size = x.shape[0]
+        num_constants = len(constants)
+        const_tensor = torch.cat(constants).view(-1, b_size).T
+        const_tensor.requires_grad = False
+        return const_tensor
 
 class ParameterNet(nn.Module):
     def __init__(self, in_size, in_channels, hidden_channels, n_layers, num_learned_parameters, dimensions = 2):
@@ -128,8 +140,8 @@ class ParameterNet(nn.Module):
             hidden_channels*int(in_size/16)*int(in_size/16), num_learned_parameters).double()
         elif self.dimensions == 1:
             self.fno_encoder = FNO1d(n_modes_height = 16, hidden_channels = hidden_channels,
-            in_channels = in_channels, out_channels = hidden_channels, n_layers = n_layers).to(torch.complex128)
-            self.fno_encoder = self.fno_encoder.apply(lambda t: t.to(torch.complex128))
+                            in_channels = in_channels, out_channels = hidden_channels, n_layers = n_layers).double()
+            self.fno_encoder = self.fno_encoder.apply(lambda t: t.double())
             self.conv = nn.Sequential(Conv1d(hidden_channels, hidden_channels, kernel_size=3, stride=1, padding=2),
                         nn.ReLU(),
                         nn.MaxPool1d(4),
@@ -191,14 +203,16 @@ class OneDEmbedding(torch.nn.Module):
                 self.n_frames = 4 * n_frames
         
         self.data_root = data_root
+        self.learned = learned
         # param is either a network or a callable constant
         if learned:
             self.paramnet = ParameterNet(
                 self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters, dimensions=1)
             self.paramnet = self.paramnet.apply(lambda t: t.cuda())
-            # self.paramnet = self.paramnet.apply(lambda t: t.double())
+            self.paramnet = self.paramnet.apply(lambda t: t.double())
         else:
-            self.paramnet = ConstantLayer(1e-3)
+            # self.paramnet = ConstantLayer(1e-3)
+            self.paramnet = ConstantLayer_MultiParam()
         # initialize grid for finite differences
         file = h5py.File(join(data_root, glob.glob(f"{self.data_root}/*.hdf5")[-1]))
 
@@ -257,7 +271,6 @@ class OneDEmbedding(torch.nn.Module):
             return pde_residual
 
     def forward(self, solution_field, true_params = None, return_params = False):
-        pdb.set_trace()
         # solution_field = solution_field.reshape(solution_field.shape[0],
         #                                         int(solution_field.shape[1] /
         #                                             self.in_channels), self.in_channels,
@@ -270,19 +283,19 @@ class OneDEmbedding(torch.nn.Module):
         if true_params is not None:
             with torch.no_grad():
                 nu_true = true_params[0]
-                if self.pde == '1d_advection_multiparam':
+                if self.pde == '1d_advection_multiparam' or self.pde == '1d_advection_multiparam_fno_rnn':
                     true_residual, partials = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
                 elif self.pde == '1d_burgers_multiparam':
                     true_residual, partials = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
 
         input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else solution_field ### might need changes here
         input_data = input_data.to(torch.float64)
-        input_data = input_data.double()
+        # input_data = input_data.double()
         # pdb.set_trace()
-        params = self.paramnet(input_data[:,:,0,:,0])
+        params = self.paramnet(input_data[:,:,0,:,0]) if self.learned else self.paramnet(input_data[:,:,0,:,0], *true_params)
         nu = params[:, 0].double()
-        
-        if self.pde == '1d_advection_multiparam':
+        # nu = true_params[0]
+        if self.pde == '1d_advection_multiparam' or self.pde == '1d_advection_multiparam_fno_rnn':
             residual = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu)
         elif self.pde == '1d_burgers_multiparam':
             residual = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu)

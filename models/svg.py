@@ -1,7 +1,7 @@
 from torch import nn
 import contextlib
 import torch
-
+import pdb
 
 class SVGModel(nn.Module):
     def __init__(self, encoder, frame_predictor, decoder, prior, posterior, emb=None, true_emb = None):
@@ -14,7 +14,7 @@ class SVGModel(nn.Module):
         self.emb = emb
         self.true_emb = true_emb if true_emb is not None else None
 
-    def forward(self, x_in, gt=None, true_params = None, skip=None, opt=None, i=None, mode='eval', prior_eps=[None], posterior_eps=[None]):
+    def forward(self, x_in, gt=None, true_params = None, skip=None, opt=None, i=None, mode='eval', prior_eps=[None], posterior_eps=[None], return_params = False):
         '''
         Perform a forward pass of either the SVG model or the embedding layer
 
@@ -40,11 +40,16 @@ class SVGModel(nn.Module):
             # else:
             mu, logvar, mu_p, logvar_p, skip = torch.Tensor([0.]), torch.Tensor(
                 [0.]), torch.Tensor([0.]), torch.Tensor([0.]), torch.Tensor([0.])
-
             # predict
             if i >= opt.n_past:
-                x_hat = self.frame_predictor(h)  # predict
-                x_hat = self.decoder(x_hat)  # identity mapping
+                if x_in.shape[-1] == 1:
+                    x_hat = self.frame_predictor(h[:,:,:,0])  # predict
+                    x_hat = self.decoder(x_hat)  # identity mapping
+                    x_hat = x_hat.unsqueeze(-1)
+                else:
+                    # pdb.set_trace()
+                    x_hat = self.frame_predictor(h)  # predict
+                    x_hat = self.decoder(x_hat)  # identity mapping
             else:  # just predict the gt if we're not in the future yet
                 x_hat = gt
 
@@ -64,16 +69,22 @@ class SVGModel(nn.Module):
 
             mu, logvar, mu_p, logvar_p, skip = torch.Tensor([0.]), torch.Tensor(
                 [0.]), torch.Tensor([0.]), torch.Tensor([0.]), torch.Tensor([0.])
-            h_pred = self.frame_predictor(h)  # predidt
-            x_hat = self.decoder(h_pred)  # identity mapping
-
+            if x_in.shape[-1] == 1:
+                x_hat = self.frame_predictor(h[:,:,:,0])  # predict
+                x_hat = self.decoder(x_hat)  # identity mapping
+                x_hat = x_hat.unsqueeze(-1)
+            else:
+                x_hat = self.frame_predictor(h)  # predict
+                x_hat = self.decoder(x_hat)  # identity mapping
             return x_hat, mu, logvar, mu_p, logvar_p, skip
 
         elif mode == 'emb':
             assert (true_params is not None)
-            return self.emb(x_in, true_params = true_params)
+            pde_value, true_pde_value, pred_params = self.emb(x_in, true_params = true_params, return_params = return_params)
+            return pde_value, true_pde_value, pred_params
         elif mode == 'true_emb':
             assert(true_params is not None)
             assert(self.true_emb is not None)
-            return self.true_emb(x_in, true_params = true_params)
+            pde_value, true_pde_value, pred_params = self.true_emb(x_in, true_params = true_params, return_params = return_params)
+            return pde_value, true_pde_value, true_params
         raise NotImplementedError('please use either "svg", "emb", or "true_emb" mode')

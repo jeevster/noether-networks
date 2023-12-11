@@ -38,7 +38,12 @@ DATADIR=/data/divyam123/advection_log_space_res_1024
 #--use_adam_inner_opt
 #--norm instance_norm \
 #--use_cn \
+# --save_checkpoint \
+# --ckpt_outer_loss \
+# --ckpt_inner_loss \
 python train_noether_net_checkpointing_non_meta_2.py \
+--use_cn \
+--norm instance_norm \
 --inner_opt_all_model_weights \
 --use_adam_inner_opt \
 --outer_loss_choice old \
@@ -80,10 +85,7 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --reuse_lstm_eps \
 --num_learned_parameters 1 \
 --use_partials \
---save_checkpoint \
---ckpt_outer_loss \
---ckpt_inner_loss \
---log_dir  /data/divyam123/results_noether_summer/best_results/non_meta_baseline/data_true_outer_true_inner/ \
+--log_dir  /data/divyam123/results_noether_summer/best_results/non_meta_baseline/data_true_outer_true_inner/run_advection_mode=data_true_outer_true_inner_inneropt=adam_tailor=cn+dynamics_norm=instance \
 --warmstart_emb_path best_ckpt_model_advection.pt \
 --channels 1 \
 --random_weights \

@@ -24,7 +24,7 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
     if num_emb_frames == 1:
         val_nu_loss = 0
         for frame in gen_seq:
-            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mod, return_params = True)
+            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)
             nu_pred = pred_params[0]
             nu = true_params[0]
             val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
@@ -40,8 +40,8 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
         for frame in stacked_gen_seq:
             pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)#, add_learnable = True)
 
-            nu_pred = pred_params[0]
-            nu = true_params[0]
+            nu_pred = pred_params[0].to(torch.cuda.current_device())
+            nu = true_params[0].to(torch.cuda.current_device())
             val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
             if learnable_model != None:
                 if opt.channels == 1:
@@ -99,9 +99,6 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
         elif compare_to == 'pde_log':
             pairwise_inner_losses = torch.stack(
                 [torch.abs(emb).log10().mean() for emb in embs])
-        elif compare_to == 'pde_avg':
-            pairwise_inner_losses = torch.stack(
-                [emb.mean() for emb in embs])
         else:
             raise ValueError('inner_crit_compare_to must be one of [prev, zero, zero_and_prev, pde_zero, or pde_log')
     elif mode == 'cosine':
@@ -111,12 +108,11 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
     else:
         raise NotImplementedError('please use either "mse" or "cosine" mode')
     # total inner loss is just the sum of pairwise losses
-    if compare_to == 'pde_avg':
-        return pairwise_inner_losses.sum(), torch.sum(torch.stack(param_loss), dim=0)
-    return torch.sum(pairwise_inner_losses, dim=0), torch.sum(torch.stack(param_loss), dim=0)
+    pairwise_abs_inner_losses = torch.stack([torch.abs(emb).mean() for emb in embs])
+    return torch.sum(pairwise_inner_losses, dim=0), torch.sum(torch.stack(param_loss), dim=0), torch.sum(pairwise_abs_inner_losses, dim = 0)
 
 
-def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_epses=[], posterior_epses=[], learnable_model = False):
+def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_epses=[], posterior_epses=[], learnable_model = False, phi_hat = None):
     mus, logvars, mu_ps, logvar_ps = [], [], [], []
     if 'Basic' not in type(func_model).__name__:
         if getattr(func_model.frame_predictor, 'init_hidden', None) is not None:
@@ -144,13 +140,22 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
                 x_in = torch.cat(gen_seq[-opt.n_past:], dim =1).clone().detach()
             else:
                 # and this one doesn't do stop grad at all
-                #condition on last n_past generated frames
-                x_in = torch.cat(gen_seq[-opt.n_past:], dim =1)
+                # condition on last n_past generated frames
+                # pdb.set_trace()
+                if opt.conditioning:
+                    tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gen_seq[-opt.n_past:]]
+                    x_in = torch.cat(tiled_seq, dim = 1)
+                else:
+                    x_in = torch.cat(gen_seq[-opt.n_past:], dim =1)
 
         elif mode == 'train':
             gt = gt_seq[i]
             #condition on last n_past ground truth frames (teacher forcing)
-            x_in = torch.cat(gt_seq[(i-opt.n_past):i], dim = 1)
+            if opt.conditioning:
+                tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gt_seq[(i-opt.n_past):i]]
+                x_in = torch.cat(tiled_seq, dim = 1)
+            else:
+                x_in = torch.cat(gt_seq[(i-opt.n_past):i], dim = 1)
         else:
             raise NotImplementedError
 #         gt = None if i >= opt.n_past else gt_seq[i]
@@ -167,7 +172,6 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
 #             print('sampling eps')
 
         # predict
-        pdb.set_trace()
         x_hat, mu, logvar, mu_p, logvar_p, skip = func_model(
             x_in,
             gt, true_params, skip, opt,
@@ -208,6 +212,7 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
     # TODO: uncomment
     replace_cn_layers(svg_model.encoder)
     replace_cn_layers(svg_model.decoder)
+    replace_cn_layers(svg_model.frame_predictor)
     if 'load_cached_cn' in kwargs and kwargs['load_cached_cn'] and \
             'cached_cn' in kwargs and kwargs['cached_cn'][0] is not None:
         load_cached_cn_modules(svg_model, kwargs['cached_cn'][0])
@@ -218,18 +223,26 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
     cn_module_params = list(svg_model.decoder.named_parameters())
     if not 'only_cn_decoder' in kwargs or not kwargs['only_cn_decoder']:
         cn_module_params += list(svg_model.encoder.named_parameters())
-    cn_params = [p[1] for p in cn_module_params if (
-        'gamma' in p[0] or 'beta' in p[0])]
+
+    cn_params = [p[1] for p in cn_module_params if ('gamma' in p[0] or 'beta' in p[0])]
 
     if 'Basic' in type(svg_model).__name__:
-        cn_params = list(svg_model.encoder.parameters()) + \
-            list(svg_model.decoder.parameters())
+        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters())
 
-    elif opt.inner_opt_all_model_weights:
+    # elif opt.inner_opt_all_model_weights:
         # TODO: try with ALL modules, not just enc and dec
-        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters()) \
-            + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
-            list(svg_model.frame_predictor.parameters())
+        # cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters()) \
+            # + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
+                # list(svg_model.frame_predictor.parameters())
+
+    frame_predictor_params =  list(svg_model.frame_predictor.named_parameters())
+    if opt.use_cn == True and opt.inner_opt_all_model_weights == False:
+        cn_params += [p[1] for p in frame_predictor_params if ('gamma' in p[0] or 'beta' in p[0])]
+    elif opt.use_cn == False and opt.inner_opt_all_model_weights == True:
+
+        cn_params += [p[1] for p in frame_predictor_params if not ('gamma' in p[0] or 'beta' in p[0])]
+    elif opt.use_cn == True and opt.inner_opt_all_model_weights == True:
+        cn_params += list(svg_model.frame_predictor.parameters())
 
     inner_lr = opt.inner_lr
     if 'val_inner_lr' in kwargs:
@@ -246,10 +259,12 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
     if 'inner_crit_mode' in kwargs:
         inner_crit_mode = kwargs['inner_crit_mode']
 
-    tailor_loss_gain = []
-    true_tailor_loss_gain = []
+    # tailor_loss_gain = []
+    # true_tailor_loss_gain = []
     tailor_losses = []
+    tailor_abs_losses = []
     true_tailor_losses = []
+    true_tailor_abs_losses = []
     param_losses = []
     true_param_losses = []
     svg_losses = []
@@ -257,10 +272,18 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
     psnrs = []
     mses = []
     epsilons = []
-
+    data_loss_collector = []
     orig_gen_seq = None
     orig_tailor_loss = None
-
+    cn_tailored_params = None
+    normal_tailored_params = None
+    cache = cache_cn_modules(svg_model)
+    try:
+        cn_original_params = cache['frame_predictor.CNlayers.0.gamma']
+        normal_original_params =  cache['frame_predictor.lifting.fc.weight']
+    except:
+        cn_original_params = 0
+        normal_original_params = 0
     with higher.innerloop_ctx(
         svg_model,
         inner_opt,
@@ -272,6 +295,9 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
         posterior_epses = []
         loss_collector = []
         true_loss_collector = []
+        abs_loss_collector = []
+        true_abs_loss_collector = []
+
         # TODO: set requires_grad=False for the outer params
         if opt.tailor == True:
             print("TAILORING")
@@ -288,22 +314,28 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                 gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
                                                                              prior_epses=prior_epses,
                                                                              posterior_epses=posterior_epses,
-                                                                             learnable_model = learnable_model
+                                                                             learnable_model = learnable_model,
+                                                                             phi_hat = kwargs['phi_hat']
                                                                              )
                 # compute Noether loss
-                tailor_loss, param_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
+                tailor_loss, param_loss, tailor_abs_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
                                                     num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
                                                     compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
                 loss_collector.append(tailor_loss)
+                abs_loss_collector.append(tailor_abs_loss)
                 #compute true PDE loss if using learnable embedding
-                true_tailor_loss = None
+                # true_tailor_loss = None
                 # if opt.emb_type != 'pde_const_emb':
                 with torch.no_grad():
-                    true_tailor_loss, true_param_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
-                                                                num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
-                                                                compare_to=opt.inner_crit_compare_to, setting=mode, 
-                                                                opt=opt, emb_mode = 'true_emb')
+                    _, outer_mse_loss, _, _, _ = compute_losses(gen_seq, x, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
+                    true_tailor_loss, true_param_loss, true_tailor_abs_loss = inner_crit(fmodel, gen_seq, params, mode=inner_crit_mode,
+                                                                                    num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
+                                                                                    compare_to=opt.inner_crit_compare_to, setting=mode, 
+                                                                                    opt=opt, emb_mode = 'true_emb')
                     true_loss_collector.append(true_tailor_loss)
+                    data_loss_collector.append(outer_mse_loss)
+                    true_abs_loss_collector.append(true_tailor_abs_loss)
+
                 if inner_step == 0:
                     # print('writing orig_gen_seq and orig_tailor_loss')
                     orig_gen_seq = [f.detach() for f in gen_seq]
@@ -319,6 +351,10 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
 
                 # gradient tailoring step on Noether loss
                 diffopt.step(loss)
+                cache = cache_cn_modules(fmodel)
+                cn_tailored_params = cache['frame_predictor.CNlayers.0.gamma']
+                # with torch.no_grad():
+                normal_tailored_params = cache['frame_predictor.lifting.fc.weight']
 
                 # cache CN params
                 if 'cached_cn' in kwargs:
@@ -336,9 +372,11 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                 # track metrics
                 # TODO: also compute outer loss at each step for plotting
                 tailor_losses.append(tailor_loss.detach().mean().item())
+                tailor_abs_losses.append(tailor_abs_loss.detach().mean().item())
                 param_losses.append(param_loss.detach().mean().item())
                 if true_tailor_loss is not None:
                     true_tailor_losses.append(true_tailor_loss.detach().mean().item())
+                    true_tailor_abs_losses.append(true_tailor_abs_loss.detach().mean().item())
                     true_param_losses.append(true_param_loss.detach().mean().item())
 
                 if 'tailor_ssims' in kwargs:
@@ -349,50 +387,58 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                     psnrs.append(psnr)
                     mses.append(mse)
 
-                svg_mse_loss, svg_pde_loss = svg_crit(gen_seq, x, mus, logvars,
+                svg_mse_loss, svg_pde_loss,_ = svg_crit(gen_seq, x, mus, logvars,
                                     mu_ps, logvar_ps, true_pde_embedding, params, opt)
                 svg_mse_loss = svg_mse_loss.detach().cpu().item()
                 svg_pde_loss = svg_pde_loss.detach().cpu().item()
                 svg_losses.append(svg_mse_loss) #only keep data loss for plotting
 
-        # # TODO: remove next two lines
-        # _cn_beta = list(filter(lambda p: 'beta' in p[0], fmodel.decoder.named_parameters()))
-        # print(f'CN layer beta: {_cn_beta[1]}')
+                # # TODO: remove next two lines
+                # _cn_beta = list(filter(lambda p: 'beta' in p[0], fmodel.decoder.named_parameters()))
+                # print(f'CN layer beta: {_cn_beta[1]}')
 
-        if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
-            # print('not re-use lstm eps')
-            prior_epses = []
-            posterior_epses = []
+                if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
+                    # print('not re-use lstm eps')
+                    prior_epses = []
+                    posterior_epses = []
 
         # generate the final model prediction with the tailored weights
         final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
                                                                             prior_epses=prior_epses,
                                                                             posterior_epses=posterior_epses,
-                                                                            learnable_model = learnable_model
-                                                                           )
+                                                                            learnable_model = learnable_model,
+                                                                            phi_hat = kwargs['phi_hat'] if 'phi_hat' in kwargs else None
+                                                                        )
 
         # track metrics
         # if opt.tailor:
         #want to measure PDE residual loss even when not tailoring
-        tailor_loss, param_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+        with torch.no_grad():
+            _, outer_mse_loss, _, _, _ = compute_losses(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
+            data_loss_collector.append(outer_mse_loss)
+            tailor_loss, param_loss, tailor_abs_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                     num_emb_frames=opt.num_emb_frames,
                                     opt=opt,learnable_model = learnable_model,
                                     compare_to=opt.inner_crit_compare_to)#.detach()
-        loss_collector.append(tailor_loss)
-        tailor_losses.append(tailor_loss.detach().mean().cpu().item())
-        param_losses.append(param_loss.detach().mean().cpu().item())
+            loss_collector.append(tailor_loss)
+            abs_loss_collector.append(tailor_abs_loss)
+            tailor_losses.append(tailor_loss.detach().mean().cpu().item())
+            tailor_abs_losses.append(tailor_abs_loss.detach().mean().cpu().item())
+            param_losses.append(param_loss.detach().mean().cpu().item())
 
-        # if opt.tailor:# and opt.emb_type != 'pde_const_emb':
+# if opt.tailor:# and opt.emb_type != 'pde_const_emb':
         with torch.no_grad():
-            true_tailor_loss, true_param_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+            true_tailor_loss, true_param_loss, true_tailor_abs_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                     num_emb_frames=opt.num_emb_frames,
                                     opt=opt,learnable_model = learnable_model,
                                     compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb')#.detach()
-        true_tailor_losses.append(true_tailor_loss.detach().mean().cpu().item())
-        true_param_losses.append(true_param_loss.detach().mean().cpu().item())
-        true_loss_collector.append(true_tailor_loss)
+            true_tailor_losses.append(true_tailor_loss.detach().mean().cpu().item())
+            true_tailor_abs_losses.append(true_tailor_abs_loss.detach().mean().cpu().item())
+            true_param_losses.append(true_param_loss.detach().mean().cpu().item())
+            true_loss_collector.append(true_tailor_loss)
+            true_abs_loss_collector.append(true_tailor_abs_loss)
 
-        svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
+        svg_mse_loss, svg_pde_loss,_ = svg_crit(final_gen_seq, x, mus, logvars,
                             mu_ps, logvar_ps, true_pde_embedding, params, opt)
         svg_mse_loss = svg_mse_loss.detach().cpu().item()
         svg_pde_loss = svg_pde_loss.detach().cpu().item()
@@ -422,17 +468,19 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
             final_gen_seq = [torch.where(mask, fin, orig)
                              for fin, orig in zip(final_gen_seq, orig_gen_seq)]
 
-            svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
+            svg_mse_loss, svg_pde_loss,_ = svg_crit(final_gen_seq, x, mus, logvars,
                                 mu_ps, logvar_ps, true_pde_embedding, params, opt)
             svg_mse_loss = svg_mse_loss.detach().cpu().item()
             svg_pde_loss = svg_pde_loss.detach().cpu().item()
             svg_losses.append(svg_mse_loss) #only keep the data loss for logging
 
-            tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
+            with torch.no_grad():
+
+
+                tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                      num_emb_frames=opt.num_emb_frames, opt=opt,learnable_model = learnable_model,
                                      compare_to=opt.inner_crit_compare_to).detach()
             # if opt.emb_type != 'pde_const_emb':
-            with torch.no_grad():
                 true_tailor_loss = inner_crit(fmodel, final_gen_seq, params, mode=inner_crit_mode,
                                     num_emb_frames=opt.num_emb_frames, opt=opt,learnable_model = learnable_model,
                                     compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb').detach()
@@ -451,32 +499,60 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
     # print(f'    avg INNER losses: {sum(tailor_losses) / len(tailor_losses)}')
     # track metrics
     # pdb.set_trace()
+    if 'cn_norm_tracker' in kwargs:
+        if cn_tailored_params != None:
+            kwargs['cn_norm_tracker'][0].append(torch.norm(cn_original_params).detach().cpu().item())
+            kwargs['cn_norm_tracker'][1].append(torch.norm(cn_tailored_params).detach().cpu().item())
+            kwargs['cn_norm_tracker'][2].append(torch.norm(cn_tailored_params - cn_original_params).detach().cpu().item())
+        else:
+            kwargs['cn_norm_tracker'][0].append(torch.norm(cn_original_params).detach().cpu().item())
+            kwargs['cn_norm_tracker'][1].append(torch.norm(cn_original_params).detach().cpu().item())
+            kwargs['cn_norm_tracker'][2].append(torch.norm(cn_original_params - cn_original_params).detach().cpu().item())
+    if 'normal_norm_tracker' in kwargs:
+        if normal_tailored_params != None:
+            kwargs['normal_norm_tracker'][0].append(torch.norm(normal_original_params).detach().cpu().item())
+            kwargs['normal_norm_tracker'][1].append(torch.norm(normal_tailored_params).detach().cpu().item())
+            kwargs['normal_norm_tracker'][2].append(torch.norm(normal_tailored_params - normal_original_params).detach().cpu().item())
+        else:
+            kwargs['normal_norm_tracker'][0].append(torch.norm(normal_original_params).detach().cpu().item())
+            kwargs['normal_norm_tracker'][1].append(torch.norm(normal_original_params).detach().cpu().item())
+            kwargs['normal_norm_tracker'][2].append(torch.norm(normal_original_params - normal_original_params).detach().cpu().item())
     if 'tailor_losses' in kwargs:
         kwargs['tailor_losses'].append(tailor_losses)
+    if 'tailor_abs_losses' in kwargs:
+        kwargs['tailor_abs_losses'].append(tailor_abs_losses)
     if 'inner_gain' in kwargs:
-        difference = loss_collector[-1] - loss_collector[0]
+        difference = (loss_collector[-1] - loss_collector[0]) / loss_collector[0]
         kwargs['inner_gain'].append(difference.mean().detach().cpu().item())
+    if 'abs_inner_gain' in kwargs:
+        difference = (abs_loss_collector[-1] - abs_loss_collector[0]) / abs_loss_collector[0]
+        kwargs['abs_inner_gain'].append(difference.mean().detach().cpu().item())
+    if 'data_gain' in kwargs:
+        difference =( data_loss_collector[-1] - data_loss_collector[0]) / data_loss_collector[0]
+        kwargs['data_gain'].append(difference.mean().detach().cpu().item())
     if 'true_inner_gain' in kwargs:
-        difference = true_loss_collector[-1] - true_loss_collector[0]
+        difference = (true_loss_collector[-1] - true_loss_collector[0]) / true_loss_collector[0]
         kwargs['true_inner_gain'].append(difference.mean().detach().cpu().item())
+    if 'true_abs_inner_gain' in kwargs:
+        difference = (true_abs_loss_collector[-1] - true_abs_loss_collector[0]) / true_abs_loss_collector[0]
+        kwargs['true_abs_inner_gain'].append(difference.mean().detach().cpu().item())
     if 'true_tailor_losses' in kwargs:# in kwargs and opt.tailor and opt.emb_type != 'pde_const_emb':
         kwargs['true_tailor_losses'].append(true_tailor_losses)
+    if 'true_tailor_abs_losses' in kwargs:# in kwargs and opt.tailor and opt.emb_type != 'pde_const_emb':
+        kwargs['true_tailor_abs_losses'].append(true_tailor_abs_losses)
     if 'param_losses' in kwargs:
         kwargs['param_losses'].append(param_losses)
     if 'true_param_losses' in kwargs:
         kwargs['true_param_losses'].append(true_param_losses)
-
     if all(m in kwargs for m in ('tailor_ssims', 'tailor_psnrs', 'tailor_mses')):
         kwargs['tailor_ssims'].append(ssims)
         kwargs['tailor_psnrs'].append(psnrs)
         kwargs['tailor_mses'].append(mses)
-
     if 'svg_losses' in kwargs:
         kwargs['svg_losses'].append(svg_losses)
 
     # we need the first and second order statistics of the posterior and prior for outer (SVG) loss
     return final_gen_seq, mus, logvars, mu_ps, logvar_ps
-
 
 
 def dont_tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_higher_grads=True, mode='eval',learnable_model = None, **kwargs):
@@ -548,7 +624,7 @@ def dont_tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_
     # if opt.tailor:
     #want to measure PDE residual loss even when not tailoring
     with torch.no_grad():
-        tailor_loss, param_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
+        tailor_loss, param_loss, _ = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
                                 num_emb_frames=opt.num_emb_frames,
                                 opt=opt,learnable_model = learnable_model,
                                 compare_to=opt.inner_crit_compare_to)#.detach()
@@ -558,7 +634,7 @@ def dont_tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_
 
     # if opt.tailor:# and opt.emb_type != 'pde_const_emb':
     with torch.no_grad():
-        true_tailor_loss, true_param_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
+        true_tailor_loss, true_param_loss, _ = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
                                 num_emb_frames=opt.num_emb_frames,
                                 opt=opt,learnable_model = learnable_model,
                                 compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb')#.detach()
@@ -566,7 +642,7 @@ def dont_tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_
         true_param_losses.append(true_param_loss.detach().mean().cpu().item())
         true_loss_collector.append(true_tailor_loss)
 
-    svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
+    svg_mse_loss, svg_pde_loss,_ = svg_crit(final_gen_seq, x, mus, logvars,
                         mu_ps, logvar_ps, true_pde_embedding, params, opt)
     svg_mse_loss = svg_mse_loss.detach().cpu().item()
     svg_pde_loss = svg_pde_loss.detach().cpu().item()
@@ -609,295 +685,3 @@ def dont_tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_
     # we need the first and second order statistics of the posterior and prior for outer (SVG) loss
     return final_gen_seq, mus, logvars, mu_ps, logvar_ps
 
-
-def pino_style_tailoring(svg_model, x, true_pde_embedding, params, opt, track_higher_grads=True, mode='eval',learnable_model = None, **kwargs):
-    '''
-    Perform a round of tailoring.
-    '''
-    # pdb.set_trace()
-    if not hasattr(opt, 'num_emb_frames'):
-        opt.num_emb_frames = 1  # number of frames to pass to the embedding
-    # re-initialize CN params
-    # TODO: uncomment
-    replace_cn_layers(svg_model.encoder)
-    replace_cn_layers(svg_model.decoder)
-    if 'load_cached_cn' in kwargs and kwargs['load_cached_cn'] and \
-            'cached_cn' in kwargs and kwargs['cached_cn'][0] is not None:
-        load_cached_cn_modules(svg_model, kwargs['cached_cn'][0])
-    # TODO: investigate the effect of not replacing these after jump step zero
-    # _cn_beta = list(filter(lambda p: 'beta' in p[0], svg_model.decoder.named_parameters()))
-    # print(f'CN layer gamma: {_cn_beta[1]}')
-
-    cn_module_params = list(svg_model.decoder.named_parameters())
-    if not 'only_cn_decoder' in kwargs or not kwargs['only_cn_decoder']:
-        cn_module_params += list(svg_model.encoder.named_parameters())
-    cn_params = [p[1] for p in cn_module_params if (
-        'gamma' in p[0] or 'beta' in p[0])]
-
-    if 'Basic' in type(svg_model).__name__:
-        cn_params = list(svg_model.encoder.parameters()) + \
-            list(svg_model.decoder.parameters())
-
-    elif opt.inner_opt_all_model_weights:
-        # TODO: try with ALL modules, not just enc and dec
-        cn_params = list(svg_model.encoder.parameters()) + list(svg_model.decoder.parameters()) \
-            + list(svg_model.prior.parameters()) + list(svg_model.posterior.parameters()) + \
-            list(svg_model.frame_predictor.parameters())
-
-    inner_lr = opt.inner_lr
-    if 'val_inner_lr' in kwargs:
-        inner_lr = kwargs['val_inner_lr']
-
-    if not hasattr(opt, 'inner_crit_compare_to'):
-        opt.inner_crit_compare_to = 'prev'
-    non_cn_params = [p[1] for p in list(svg_model.encoder.named_parameters()) +
-                         list(svg_model.decoder.named_parameters())
-                         if not ('gamma' in p[0] or 'beta' in p[0])]
-    emb_params = [p[1] for p in svg_model.emb.named_parameters() if not (
-        'gamma' in p[0] or 'beta' in p[0])]
-    outer_params = non_cn_params + emb_params + \
-            list(svg_model.prior.parameters()) + \
-            list(svg_model.posterior.parameters()) + \
-            list(svg_model.frame_predictor.parameters())
-    inner_opt = optim.Adam(outer_params, lr=inner_lr)
-    if 'adam_inner_opt' in kwargs and kwargs['adam_inner_opt']:
-        inner_opt = optim.Adam(cn_params, lr=inner_lr)
-
-    inner_crit_mode = 'mse'
-    if 'inner_crit_mode' in kwargs:
-        inner_crit_mode = kwargs['inner_crit_mode']
-
-    tailor_loss_gain = []
-    true_tailor_loss_gain = []
-    tailor_losses = []
-    true_tailor_losses = []
-    param_losses = []
-    true_param_losses = []
-    svg_losses = []
-    ssims = []
-    psnrs = []
-    mses = []
-    epsilons = []
-
-    orig_gen_seq = None
-    orig_tailor_loss = None
-
-
-    prior_epses = []
-    posterior_epses = []
-    loss_collector = []
-    true_loss_collector = []
-    # TODO: set requires_grad=False for the outer params
-    truth = True
-    print("TAILORING")
-    # original_model =  copy.deepcopy(svg_model.state_dict())
-    for inner_step in range(1):
-        # if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
-            # print('not re-use lstm eps')
-            # prior_epses = []
-            # posterior_epses = []
-        # inner step: make a prediction, compute inner loss, backprop wrt inner loss
-
-        # print(f'beginning of step {inner_step} of tailoring loop: prior_epses = {prior_epses}')
-        # autoregressive rollout
-        final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(svg_model, x, params, opt, mode=mode,
-                                                                        prior_epses=prior_epses,
-                                                                        posterior_epses=posterior_epses,
-                                                                        learnable_model = learnable_model
-                                                                        )
-    #     # compute Noether loss
-    #     # tailor_loss, param_loss = inner_crit(svg_model, gen_seq, params, mode=inner_crit_mode,
-    #     #                                     num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
-    #     #                                     compare_to=opt.inner_crit_compare_to, setting=mode, opt=opt)
-    #     # tailor_loss, param_loss = inner_crit(svg_model, gen_seq, params, mode=inner_crit_mode,
-    #                                                     # num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
-    #                                                     # compare_to=opt.inner_crit_compare_to, setting=mode, 
-    #                                                     # opt=opt, emb_mode = 'true_emb')
-    #     # loss_collector.append(tailor_loss)
-    #     #compute true PDE loss if using learnable embedding
-    #     # true_tailor_loss = None
-    #     # if opt.emb_type != 'pde_const_emb':
-    #     # with torch.no_grad():
-    #     #     true_tailor_loss, true_param_loss = inner_crit(svg_model, gen_seq, params, mode=inner_crit_mode,
-    #     #                                                 num_emb_frames=opt.num_emb_frames,learnable_model = learnable_model,
-    #     #                                                 compare_to=opt.inner_crit_compare_to, setting=mode, 
-    #     #                                                 opt=opt, emb_mode = 'true_emb')
-    #     #     true_loss_collector.append(true_tailor_loss)
-    #     # if inner_step == 0:
-    #     #     # print('writing orig_gen_seq and orig_tailor_loss')
-    #     #     orig_gen_seq = [f.detach() for f in gen_seq]
-    #     #     orig_tailor_loss = tailor_loss.detach()
-
-        
-
-    #     # don't do this (as of now)
-    #     # if opt.learn_inner_lr:
-    #     #     # we optionally meta-learn the inner learning rate (log scale)
-    #     #     loss *= torch.exp(list(filter(lambda x: x.size() == torch.Size([]),
-    #     #                                     [param for param in svg_model.parameters()]))[0])
-
-    #     # # gradient tailoring step on Noether loss
-    #     # # diffopt.step(loss)
-    #     # # cache CN params
-    #     # if 'cached_cn' in kwargs:
-    #     #     kwargs['cached_cn'][0] = cache_cn_modules(svg_model)
-
-    #     # TODO: test outer opt pass in inner loop
-
-    #     # don't do this as of now
-    #     # if 'svg_crit' in kwargs:
-    #         # outer_loss = kwargs['svg_crit'](
-    #             # gen_seq, x, mus, logvars, mu_ps, logvar_ps, opt).mean()
-    #         # print(f'outer_loss in inner loop: {outer_loss}')
-    #         # outer_loss.backward()
-
-    #     # track metrics
-    #     # TODO: also compute outer loss at each step for plotting
-    #     # tailor_losses.append(tailor_loss.detach().mean().item())
-    #     # param_losses.append(param_loss.detach().mean().item())
-    #     # if true_tailor_loss is not None:
-    #     #     true_tailor_losses.append(true_tailor_loss.detach().mean().item())
-    #     #     true_param_losses.append(true_param_loss.detach().mean().item())
-
-    #     # if 'tailor_ssims' in kwargs:
-    #     #     # compute SSIM for gen_seq batch
-    #     #     mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
-    #     #                                         [f.detach() for f in gen_seq[opt.n_past:]])
-    #     #     ssims.append(ssim)
-    #     #     psnrs.append(psnr)
-    #     #     mses.append(mse)
-    #     # svg_mse_loss, svg_pde_loss = svg_crit(gen_seq, x, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
-        outer_loss, outer_mse_loss, outer_pde_loss = compute_losses(final_gen_seq, x, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
-    #     # svg_mse_loss = svg_mse_loss.detach().cpu().item()
-    #     # svg_pde_loss = svg_pde_loss.detach().cpu().item()
-    #     # svg_losses.append(svg_mse_loss) #only keep data loss for plotting
-        loss = outer_pde_loss.mean()
-        loss.backward()
-        inner_opt.step()
-        svg_model.zero_grad(set_to_none=True)
-    # # TODO: remove next two lines
-    # _cn_beta = list(filter(lambda p: 'beta' in p[0], fmodel.decoder.named_parameters()))
-    # print(f'CN layer beta: {_cn_beta[1]}')
-
-    if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
-        # print('not re-use lstm eps')
-        prior_epses = []
-        posterior_epses = []
-
-    # generate the final model prediction with the tailored weights
-    final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(svg_model, x, params, opt, mode=mode,
-                                                                        prior_epses=prior_epses,
-                                                                        posterior_epses=posterior_epses,
-                                                                        learnable_model = learnable_model
-                                                                    )
-
-    # svg_model.load_state_dict(original_model)
-
-    # track metrics
-    # if opt.tailor:
-    with torch.no_grad():
-    #want to measure PDE residual loss even when not tailoring
-        tailor_loss, param_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
-                                    num_emb_frames=opt.num_emb_frames,
-                                    opt=opt,learnable_model = learnable_model,
-                                    compare_to=opt.inner_crit_compare_to)#.detach()
-    loss_collector.append(tailor_loss)
-    tailor_losses.append(tailor_loss.detach().mean().cpu().item())
-    param_losses.append(param_loss.detach().mean().cpu().item())
-
-    # if opt.tailor:# and opt.emb_type != 'pde_const_emb':
-    with torch.no_grad():
-        true_tailor_loss, true_param_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
-                                num_emb_frames=opt.num_emb_frames,
-                                opt=opt,learnable_model = learnable_model,
-                                compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb')#.detach()
-    true_tailor_losses.append(true_tailor_loss.detach().mean().cpu().item())
-    true_param_losses.append(true_param_loss.detach().mean().cpu().item())
-    true_loss_collector.append(true_tailor_loss)
-
-    # svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
-    #                     mu_ps, logvar_ps, true_pde_embedding, params, opt)
-    # svg_mse_loss = svg_mse_loss.detach().cpu().item()
-    # svg_pde_loss = svg_pde_loss.detach().cpu().item()
-    # svg_losses.append(svg_mse_loss) #only keep the data loss for logging
-
-    if 'tailor_ssims' in kwargs:
-        # compute SSIM for gen_seq batch
-        mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
-                                        [f.detach() for f in final_gen_seq[opt.n_past:]])
-        ssims.append(ssim)
-        psnrs.append(psnr)
-        mses.append(mse)
-    # I think this isn't actually being run but need to double check TODO
-    if opt.only_tailor_on_improvement and orig_gen_seq is not None and orig_tailor_loss is not None and opt.tailor:
-
-        #             print(f'orig_tailor_loss > tailor_loss: {orig_tailor_loss > tailor_loss}')
-
-        # per-batch basis
-        #             final_gen_seq = orig_gen_seq
-        # per-sequence basis
-        #             print(f'fin.shape: {final_gen_seq[0].shape}')
-        mask = (orig_tailor_loss > tailor_loss).detach().view(-1, 1, 1, 1)
-        print(
-            f'percent of sequences in batch improved by tailoring: {mask.float().mean()}')
-#             print(f'mask shape: {mask.shape}')
-
-        final_gen_seq = [torch.where(mask, fin, orig)
-                        for fin, orig in zip(final_gen_seq, orig_gen_seq)]
-
-        svg_mse_loss, svg_pde_loss = svg_crit(final_gen_seq, x, mus, logvars,
-                            mu_ps, logvar_ps, true_pde_embedding, params, opt)
-        svg_mse_loss = svg_mse_loss.detach().cpu().item()
-        svg_pde_loss = svg_pde_loss.detach().cpu().item()
-        svg_losses.append(svg_mse_loss) #only keep the data loss for logging
-
-        tailor_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
-                                num_emb_frames=opt.num_emb_frames, opt=opt,learnable_model = learnable_model,
-                                compare_to=opt.inner_crit_compare_to).detach()
-        # if opt.emb_type != 'pde_const_emb':
-        with torch.no_grad():
-            true_tailor_loss = inner_crit(svg_model, final_gen_seq, params, mode=inner_crit_mode,
-                                num_emb_frames=opt.num_emb_frames, opt=opt,learnable_model = learnable_model,
-                                compare_to=opt.inner_crit_compare_to, emb_mode = 'true_emb').detach()
-        true_tailor_losses.append(true_tailor_loss.mean().detach().cpu().item())
-        tailor_losses.append(tailor_loss.mean().detach().cpu().item())
-        # inner_gain.append()
-        # true_inner_gain.append()
-        if 'tailor_ssims' in kwargs:
-            # compute SSIM for gen_seq batch
-            mse, ssim, psnr = utils.eval_seq([f.detach() for f in x[opt.n_past:]],
-                                            [f.detach() for f in final_gen_seq[opt.n_past:]])
-            ssims.append(ssim)
-            psnrs.append(psnr)
-            mses.append(mse)
-
-    # print(f'    avg INNER losses: {sum(tailor_losses) / len(tailor_losses)}')
-    # track metrics
-    # pdb.set_trace()
-    if 'tailor_losses' in kwargs:
-        kwargs['tailor_losses'].append(tailor_losses)
-    if 'inner_gain' in kwargs:
-        difference = loss_collector[-1] - loss_collector[0]
-        kwargs['inner_gain'].append(difference.mean().detach().cpu().item())
-    if 'true_inner_gain' in kwargs:
-        difference = true_loss_collector[-1] - true_loss_collector[0]
-        kwargs['true_inner_gain'].append(difference.mean().detach().cpu().item())
-    if 'true_tailor_losses' in kwargs:# in kwargs and opt.tailor and opt.emb_type != 'pde_const_emb':
-        kwargs['true_tailor_losses'].append(true_tailor_losses)
-    if 'param_losses' in kwargs:
-        kwargs['param_losses'].append(param_losses)
-    if 'true_param_losses' in kwargs:
-        kwargs['true_param_losses'].append(true_param_losses)
-
-    if all(m in kwargs for m in ('tailor_ssims', 'tailor_psnrs', 'tailor_mses')):
-        kwargs['tailor_ssims'].append(ssims)
-        kwargs['tailor_psnrs'].append(psnrs)
-        kwargs['tailor_mses'].append(mses)
-
-    if 'svg_losses' in kwargs:
-        kwargs['svg_losses'].append(svg_losses)
-
-    # we need the first and second order statistics of the posterior and prior for outer (SVG) loss
-    return final_gen_seq, mus, logvars, mu_ps, logvar_ps
-
-# 

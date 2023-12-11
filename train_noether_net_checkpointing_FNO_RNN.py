@@ -217,8 +217,6 @@ parser.add_argument('--norm', default = '',
                     help ='to use select between instance_norm, layer_norm, batch_norm')
 parser.add_argument('--cn_demo', action = 'store_true',
                     help ='to use only tailor at test time and not training time')
-parser.add_argument('--outer_loss_choice', type = str, default = 'original',
-                    help ='pde loss choice')
 
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
@@ -330,6 +328,7 @@ print(f'num_train_batch: {opt.num_train_batch}')
 print(f'test_data length: {len(test_data)}')
 print(f'num_val_batch: {opt.num_val_batch}')
 # import pdb
+# pdb.set_trace() 
 
 # --------- tracking metrics ------------------------------------
 all_outer_losses = []
@@ -392,6 +391,7 @@ for trial_num in range(opt.num_trials):
     start_epoch = 0
 
     # import pdb
+    # pdb.set_trace()
 
     print(f'TRIAL {trial_num}')
     if opt.random_weights:
@@ -661,20 +661,14 @@ for trial_num in range(opt.num_trials):
     val_svg_losses = []
     inner_losses = []
     true_inner_losses = []
-    abs_inner_losses = []
-    true_abs_inner_losses = []
-
     val_outer_losses = []
     val_outer_optimizing_losses = []
     val_inner_losses = []
     val_true_inner_losses = []
-    val_abs_inner_losses = []
-    val_true_abs_inner_losses = []
     emb_weights = []
     emb_biases = []
     all_gen = None
     param_grads = []
-    tailor_param_grads = dict()
     grad_norms = []
     emb_norms = []
 
@@ -682,17 +676,11 @@ for trial_num in range(opt.num_trials):
     true_param_losses = []
     val_param_losses = []
     val_true_param_losses = []
-
+    
     inner_gain = []
     true_inner_gain = []
     val_inner_gain = []
     val_true_inner_gain = []
-
-
-    abs_inner_gain = []
-    true_abs_inner_gain = []
-    val_abs_inner_gain = []
-    val_true_abs_inner_gain = []
 
     train_data_gain = []
     val_data_gain = []
@@ -734,11 +722,6 @@ for trial_num in range(opt.num_trials):
         epoch_val_inner_losses = []
         epoch_val_true_inner_losses = []
 
-        epoch_abs_inner_losses = []
-        epoch_true_abs_inner_losses = []
-        epoch_val_abs_inner_losses = []
-        epoch_val_true_abs_inner_losses = []
-
         epoch_param_losses = []
         epoch_true_param_losses = []
         epoch_val_param_losses = []
@@ -748,11 +731,6 @@ for trial_num in range(opt.num_trials):
         epoch_true_inner_gain = []
         epoch_val_inner_gain = []
         epoch_val_true_inner_gain = []
-
-        epoch_abs_inner_gain = []
-        epoch_true_abs_inner_gain = []
-        epoch_val_abs_inner_gain = []
-        epoch_val_true_abs_inner_gain = []
 
         epoch_data_gain = []
         epoch_val_data_gain = []
@@ -778,6 +756,7 @@ for trial_num in range(opt.num_trials):
             val_normal_diffs = [[],[],[]]
 
             for batch_num in tqdm(range(opt.num_val_batch)):
+                # pdb.set_trace()
                 batch, params = next(testing_batch_generator)
                 params = tuple([param for param in params])
 
@@ -795,7 +774,7 @@ for trial_num in range(opt.num_trials):
                                                prior_epses=prior_epses, 
                                                posterior_epses=posterior_epses, 
                                                learnable_model = learnable_model)
-                        base_outer_mse_loss, base_outer_pde_loss,_ = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
+                        base_outer_mse_loss, base_outer_pde_loss = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
                                                    base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
                         base_outer_mse_loss = base_outer_mse_loss.mean()
                         base_outer_pde_loss = base_outer_pde_loss.mean()
@@ -804,23 +783,12 @@ for trial_num in range(opt.num_trials):
                 val_cached_cn = [None]  # cached cn params
                 val_batch_inner_losses = []
                 val_batch_true_inner_losses = []
-
-                val_batch_abs_inner_losses = []
-                val_batch_true_abs_inner_losses = []
-
                 val_batch_svg_losses = []
-                
                 val_batch_inner_param_losses = []
                 val_batch_true_inner_param_losses = []
-                
                 val_batch_inner_gain = []
                 val_batch_true_inner_gain = []
-                
-                val_batch_abs_inner_gain = []
-                val_batch_true_abs_inner_gain = []
-                
                 val_batch_data_gain = []
-                
                 val_loss = 0
                 val_true_loss = 0
                 val_nu_loss = 0
@@ -842,6 +810,7 @@ for trial_num in range(opt.num_trials):
                     # batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
                     # batch -> length npast + nfut [(16,1,1024,1)]
                     # [].append(a) ->
+                    pdb.set_trace()
                     batch_norm_sum = 0
                     for data in batch:
                         batch_norm_sum += torch.sum(torch.norm(data,dim = (2,3))[:,0])
@@ -883,14 +852,10 @@ for trial_num in range(opt.num_trials):
                         # extra kwargs
                         tailor_losses=val_batch_inner_losses,
                         true_tailor_losses = val_batch_true_inner_losses,
-                        tailor_abs_losses=val_batch_abs_inner_losses,
-                        true_tailor_abs_losses = val_batch_true_abs_inner_losses,
                         param_losses = val_batch_inner_param_losses,
                         true_param_losses = val_batch_true_inner_param_losses,
                         inner_gain = val_batch_inner_gain,
                         true_inner_gain = val_batch_true_inner_gain, 
-                        abs_inner_gain = val_batch_abs_inner_gain,
-                        true_abs_inner_gain = val_batch_true_abs_inner_gain, 
                         inner_crit_mode=opt.inner_crit_mode,
                         reuse_lstm_eps=opt.reuse_lstm_eps,
                         val_inner_lr=val_inner_lr,
@@ -908,10 +873,10 @@ for trial_num in range(opt.num_trials):
                     with torch.no_grad():
                         # compute outer (task) loss
                         if opt.learned_pinn_loss and opt.pinn_outer_loss:
-                            outer_mse_loss, outer_pde_loss,_ = svg_crit(
+                            outer_mse_loss, outer_pde_loss = svg_crit(
                                 gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
                         else:
-                            outer_mse_loss, outer_pde_loss,_ = svg_crit(
+                            outer_mse_loss, outer_pde_loss = svg_crit(
                                 gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
                         outer_mse_loss = outer_mse_loss.mean()
                         outer_pde_loss = outer_pde_loss.mean()
@@ -929,52 +894,55 @@ for trial_num in range(opt.num_trials):
 
                 #SR: want to log inner losses for all tailoring steps, not just the first step
                 val_batch_inner_losses = val_batch_inner_losses[0]
-                val_batch_abs_inner_losses = val_batch_abs_inner_losses[0]
                 val_batch_inner_param_losses = val_batch_inner_param_losses[0]
                 val_batch_svg_losses = val_batch_svg_losses[0]
-                val_batch_inner_gain = val_batch_inner_gain[0]
-                val_batch_abs_inner_gain = val_batch_abs_inner_gain[0]
+                val_batch_inner_gain = val_batch_inner_gain[0] #if opt.tailor else val_batch_true_inner_gain
                 val_batch_data_gain = val_batch_data_gain[0]
                 if len(val_batch_true_inner_losses) !=0:
                     val_batch_true_inner_losses = val_batch_true_inner_losses[0]
                     val_batch_true_inner_param_losses = val_batch_true_inner_param_losses[0]
-                    val_batch_true_inner_gain = val_batch_true_inner_gain[0] 
-                    val_batch_true_abs_inner_losses = val_batch_true_abs_inner_losses[0]
-                    val_batch_true_abs_inner_gain = val_batch_true_abs_inner_gain[0] 
+                    val_batch_true_inner_gain = val_batch_true_inner_gain[0] #if opt.tailor else val_batch_true_inner_gain
+                # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
+                #     # fix the inner losses to account for jump step
+                #     # after the zeroth, take the tailored inner loss (index 1)
+                #     val_batch_svg_losses = [
+                #         val_batch_svg_losses[0][0]] + [l[1] for l in val_batch_svg_losses]
+                #     val_batch_inner_losses = [val_batch_inner_losses[0][0]] + [l[1] for l in val_batch_inner_losses]
+                # else:
+                #     val_batch_svg_losses = [val_batch_svg_losses[0][0]]
+                #     #if opt.tailor:
+                #     val_batch_inner_losses = [val_batch_inner_losses[0][0]]
+                #     # else:
+                #     #     val_batch_inner_losses = [
+                #     #         0 for _ in range(len(val_batch_svg_losses))]
 
                 # Should be zero when opt.tailor is False
+                # pdb.set_trace()
                 if len(val_batch_true_inner_losses) !=0:
                     epoch_val_true_inner_losses.append(val_batch_true_inner_losses)
-                    epoch_val_true_abs_inner_losses.append(val_batch_true_abs_inner_losses)
                     epoch_val_true_param_losses.append(val_batch_true_inner_param_losses)
                     epoch_val_true_inner_gain.append(val_batch_true_inner_gain)
-                    epoch_val_true_abs_inner_gain.append(val_batch_true_abs_inner_gain)
                 epoch_val_inner_losses.append(val_batch_inner_losses)
-                epoch_val_abs_inner_losses.append(val_batch_abs_inner_losses)
                 epoch_val_param_losses.append(val_batch_inner_param_losses)
                 epoch_val_inner_gain.append(val_batch_inner_gain)
-                epoch_val_abs_inner_gain.append(val_batch_abs_inner_gain)
                 epoch_val_svg_losses.append(val_batch_svg_losses)
                 epoch_val_data_gain.append(val_batch_data_gain)
-
+            # pdb.set_trace()
             if len(val_batch_true_inner_losses) !=0:
                 val_true_inner_losses.append([sum(x) / (opt.num_val_batch)
                                     for x in zip(*epoch_val_true_inner_losses)])
                 val_true_param_losses.append([sum(x) / (opt.num_val_batch)
                                     for x in zip(*epoch_val_true_param_losses)])
+                # val_true_inner_gain.append([sum(x) / (opt.num_val_batch)
+                                    # for x in  zip(*epoch_val_true_inner_gain)])
                 val_true_inner_gain.append(sum(epoch_val_true_inner_gain) / (opt.num_val_batch))
-                val_true_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                    for x in zip(*epoch_val_true_abs_inner_losses)])
-                val_true_abs_inner_gain.append(sum(epoch_val_true_abs_inner_gain) / (opt.num_val_batch))
 
+            # val_inner_gain.append([sum(x) / (opt.num_val_batch)
+                                    # for x in zip(*epoch_val_inner_gain)])
             val_inner_gain.append(sum(epoch_val_inner_gain) / (opt.num_val_batch))
-            val_abs_inner_gain.append(sum(epoch_val_abs_inner_gain) / (opt.num_val_batch))
 
             val_inner_losses.append([sum(x) / (opt.num_val_batch)
                                     for x in zip(*epoch_val_inner_losses)])
-            val_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                    for x in zip(*epoch_val_abs_inner_losses)])
-
             val_param_losses.append([sum(x) / (opt.num_val_batch)
                                     for x in zip(*epoch_val_param_losses)])
 
@@ -987,13 +955,14 @@ for trial_num in range(opt.num_trials):
             if opt.baseline:
                 baseline_outer_losses.append(
                     baseline_outer_loss / (opt.num_val_batch))
-
+            # pdb.set_trace()
             writer.add_scalar('Outer Loss/val', val_outer_losses[-1],
                               (epoch + 1))
             writer.add_scalar('Outer Optimizing Loss/val', val_outer_optimizing_losses[-1],
                               (epoch + 1))
 
             # if opt.use_cn:
+            # pdb.set_trace()
             writer.add_scalar('cn weights norm/val/before', sum(val_cn_diffs[0]), epoch + 1 )
             writer.add_scalar('cn weights norm/val/after', sum(val_cn_diffs[1]), epoch + 1)
             writer.add_scalar('cn weights norm/val/diff', sum(val_cn_diffs[2]), epoch + 1)
@@ -1010,18 +979,15 @@ for trial_num in range(opt.num_trials):
                     print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
             if opt.tailor:
                 for step, value in enumerate(val_inner_losses[-1]):
+                    print("LOGGING INNER PDE LOSS", len(val_inner_losses[-1]))
                     writer.add_scalar(
                         f'Inner Loss/val/{step} Step', value, (epoch + 1))
                     writer.add_scalar(
                         f'Inner Param Loss/val/{step} Step', val_param_losses[-1][step], (epoch + 1))
-                    writer.add_scalar(
-                        f'Abs Inner Loss/val/{step} Step', val_abs_inner_losses[-1][step], (epoch + 1))
 
             # if opt.tailor:
                 writer.add_scalar(
                     f'Inner Loss Gain/val', val_inner_gain[-1], (epoch + 1))
-                writer.add_scalar(
-                    f'Abs Inner Loss Gain/val', val_abs_inner_gain[-1], (epoch + 1))
 
             #Log true PDE loss
             try:
@@ -1029,17 +995,12 @@ for trial_num in range(opt.num_trials):
                     writer.add_scalar(
                         f'True Inner Loss/val/{step} Step', value, (epoch + 1))
                     writer.add_scalar(
-                        f'True Abs Inner Loss/val/{step} Step', val_true_abs_inner_losses[-1][step], (epoch + 1))
-                    writer.add_scalar(
                         f'True Inner Param Loss/val/{step} Step', val_true_param_losses[-1][step], (epoch + 1))
                 writer.add_scalar(
                     f'Data Loss Gain/val', val_data_gain[-1], (epoch + 1))
 
                 writer.add_scalar(
                     f'True Inner Loss Gain/val', val_true_inner_gain[-1], (epoch + 1))
-                writer.add_scalar(
-                    f'True Abs Inner Loss Gain/val', val_true_abs_inner_gain[-1], (epoch + 1))
-
             except IndexError:
                 pass
             if opt.verbose:
@@ -1094,6 +1055,7 @@ for trial_num in range(opt.num_trials):
         train_param_norm = 0
         train_solution_norm = 0
         for batch_num in tqdm(range(opt.num_train_batch)):
+            # pdb.set_trace()
             batch, params = next(training_batch_generator)
             params = tuple([param for param in params])
             train_mode = 'eval' if opt.no_teacher_force else 'train'
@@ -1101,18 +1063,15 @@ for trial_num in range(opt.num_trials):
             cached_cn = [None]  # cached cn params
             batch_inner_losses = []
             batch_true_inner_losses = []
-            batch_abs_inner_losses = []
-            batch_true_abs_inner_losses = []
             batch_svg_losses = []
             batch_inner_param_losses = []
             batch_true_inner_param_losses = []
             batch_inner_gain = []
             batch_true_inner_gain = []
-            batch_abs_inner_gain = []
-            batch_true_abs_inner_gain = []
             batch_data_gain = []
             for batch_step in range(opt.num_jump_steps + 1):
                 # optimizer.zero_grad()
+                # pdb.set_trace()
                 # batch, params = next(training_batch_generator)
                 # batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
                 # params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
@@ -1181,13 +1140,9 @@ for trial_num in range(opt.num_trials):
                                                             # extra kwargs
                                                             tailor_losses=batch_inner_losses,
                                                             true_tailor_losses = batch_true_inner_losses,
-                                                            tailor_abs_losses=batch_abs_inner_losses,
-                                                            true_tailor_abs_losses = batch_true_abs_inner_losses,
                                                             param_losses=batch_inner_param_losses,
                                                             true_param_losses = batch_true_inner_param_losses,
                                                             inner_gain = batch_inner_gain,
-                                                            true_abs_inner_gain = batch_true_abs_inner_gain, 
-                                                            abs_inner_gain = batch_abs_inner_gain,
                                                             true_inner_gain = batch_true_inner_gain, 
                                                             inner_crit_mode=opt.inner_crit_mode,
                                                             reuse_lstm_eps=opt.reuse_lstm_eps,
@@ -1205,11 +1160,11 @@ for trial_num in range(opt.num_trials):
                 
                 # compute task loss
                 if opt.learned_pinn_loss and opt.pinn_outer_loss:
-                    outer_mse_loss, outer_pde_loss,_ = svg_crit(
+                    outer_mse_loss, outer_pde_loss = svg_crit(
                         gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
                     
                 else:
-                    outer_mse_loss, outer_pde_loss,_ = svg_crit(
+                    outer_mse_loss, outer_pde_loss = svg_crit(
                         gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
                     outer_mse_loss = outer_mse_loss.mean()
                     outer_pde_loss = outer_pde_loss.mean()
@@ -1252,15 +1207,11 @@ for trial_num in range(opt.num_trials):
             #SR: want to log inner losses for all tailoring steps, not just the first step
             if len(batch_true_inner_losses) != 0:
                 batch_true_inner_losses = batch_true_inner_losses[0]
-                batch_true_inner_gain = batch_true_inner_gain[0]
-                batch_true_abs_inner_gain = batch_true_abs_inner_gain[0]
-                batch_true_abs_inner_losses = batch_true_abs_inner_losses[0]
                 batch_true_inner_param_losses = batch_true_inner_param_losses[0]
+                batch_true_inner_gain = batch_true_inner_gain[0] #if opt.tailor else batch_true_inner_gain
             batch_inner_param_losses = batch_inner_param_losses[0]
             batch_inner_losses = batch_inner_losses[0]
-            batch_abs_inner_losses = batch_abs_inner_losses[0]
-            batch_inner_gain = batch_inner_gain[0]
-            batch_abs_inner_gain = batch_abs_inner_gain[0]
+            batch_inner_gain = batch_inner_gain[0] #if opt.tailor else batch_inner_gain
             batch_svg_losses = batch_svg_losses[0]
             batch_data_gain = batch_data_gain[0]
             # if (opt.num_inner_steps > 0 or opt.num_jump_steps > 0) and opt.tailor:
@@ -1277,16 +1228,12 @@ for trial_num in range(opt.num_trials):
             #     #     batch_inner_losses = [
             #     #         0 for _ in range(len(batch_svg_losses))]
             if len(batch_true_inner_losses) != 0:
-                epoch_true_param_losses.append(batch_true_inner_param_losses)
                 epoch_true_inner_losses.append(batch_true_inner_losses)
+                epoch_true_param_losses.append(batch_true_inner_param_losses)
                 epoch_true_inner_gain.append(batch_true_inner_gain)
-                epoch_true_abs_inner_losses.append(batch_true_abs_inner_losses)
-                epoch_true_abs_inner_gain.append(batch_true_abs_inner_gain)
             epoch_param_losses.append(batch_inner_param_losses)
             epoch_inner_losses.append(batch_inner_losses)
             epoch_inner_gain.append(batch_inner_gain)
-            epoch_abs_inner_losses.append(batch_abs_inner_losses)
-            epoch_abs_inner_gain.append(batch_abs_inner_gain)
             epoch_svg_losses.append(batch_svg_losses)
             epoch_data_gain.append(batch_data_gain)
             # Update conservation model and task model
@@ -1295,6 +1242,7 @@ for trial_num in range(opt.num_trials):
             if opt.use_embedding:
                 outer_embedding.zero_grad(set_to_none=True)
 
+        # pdb.set_trace()
         svg_losses.append([sum(x) / (opt.num_train_batch)
                           for x in zip(*epoch_svg_losses)])
         inner_losses.append([sum(x) / (opt.num_train_batch)
@@ -1304,23 +1252,15 @@ for trial_num in range(opt.num_trials):
         # inner_gain.append([sum(x) / (opt.num_train_batch)
         #                     for x in zip(*epoch_inner_gain)])
         inner_gain.append(sum(epoch_inner_gain) / (opt.num_train_batch))
-        
-        abs_inner_gain.append(sum(epoch_abs_inner_gain) / (opt.num_train_batch))
-        abs_inner_losses.append([sum(x) / (opt.num_train_batch)
-                            for x in zip(*epoch_abs_inner_losses)])
-
         if len(batch_true_inner_losses) != 0:
             true_inner_losses.append([sum(x) / (opt.num_train_batch)
                             for x in zip(*epoch_true_inner_losses)])
-            true_abs_inner_losses.append([sum(x) / (opt.num_train_batch)
-                            for x in zip(*epoch_true_abs_inner_losses)])
-
             true_param_losses.append([sum(x) / (opt.num_train_batch)
                             for x in zip(*epoch_true_param_losses)])
             
             true_inner_gain.append(sum(epoch_true_inner_gain) / (opt.num_train_batch))
-            true_abs_inner_gain.append(sum(epoch_true_abs_inner_gain) / (opt.num_train_batch))
-
+            # true_inner_gain.append([sum(x) / (opt.num_train_batch)
+            #                 for x in zip(*epoch_true_inner_gain)])
             train_data_gain.append(sum(epoch_data_gain) / (opt.num_train_batch))
         grad_norms.append(grad_norm_sum / opt.num_train_batch)
         emb_norms.append(emb_norm_sum / opt.num_train_batch)
@@ -1345,20 +1285,14 @@ for trial_num in range(opt.num_trials):
                 writer.add_scalar(
                     f'Inner Loss/train/{step} Step', value, (epoch + 1))
                 writer.add_scalar(
-                    f'Inner Abs Loss/train/{step} Step', abs_inner_losses[-1][step], (epoch + 1))
-                writer.add_scalar(
                     f'Inner Param Loss/train/{step} Step', param_losses[-1][step], (epoch + 1))
+
             writer.add_scalar(
                 f'Inner Loss Gain/train', inner_gain[-1], (epoch + 1))
-            writer.add_scalar(
-                f'Inner Abs Loss Gain/train', abs_inner_gain[-1], (epoch + 1))
-
         try:
             for step, value in enumerate(true_inner_losses[-1]):
                 writer.add_scalar(
                     f'True Inner Loss/train/{step} Step', value, (epoch + 1))
-                writer.add_scalar(
-                    f'True Abs Inner Loss/train/{step} Step', true_abs_inner_losses[-1][step], (epoch + 1))
                 writer.add_scalar(
                     f'True Inner Param Loss/train/{step} Step', true_param_losses[-1][step], (epoch + 1))
 
@@ -1367,9 +1301,6 @@ for trial_num in range(opt.num_trials):
             # if opt.tailor:
             writer.add_scalar(
                 f'True Inner Loss Gain/train', true_inner_gain[-1], (epoch + 1))
-            writer.add_scalar(
-                f'True Abs Inner Loss Gain/train', true_abs_inner_gain[-1], (epoch + 1))
-
         except IndexError:
             pass
 

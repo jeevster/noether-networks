@@ -10,7 +10,7 @@ class CNLayer(nn.Module):
 
     def __init__(self, shape):
         super(CNLayer, self).__init__()
-        assert len(shape) == 4, "CN layer must have 2-dimensional shape"
+        # assert len(shape) == 4, "CN layer must have 2-dimensional shape"
         self.shape = shape
         self.gamma = nn.Parameter(torch.ones(shape))
         self.beta = nn.Parameter(torch.zeros(shape))
@@ -50,6 +50,8 @@ def cache_cn_modules(model):
     with torch.no_grad():
         for name, param in model.named_parameters():
             if 'gamma' in name or 'beta' in name:
+                copied_modules[name] = param.detach().clone()
+            if 'lifting' in name and 'weight' in name:
                 copied_modules[name] = param.detach().clone()
 
         # copy modules not named params:

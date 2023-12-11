@@ -38,7 +38,7 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
                 torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
         val_nu_loss = 0
         for frame in stacked_gen_seq:
-            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode)#, add_learnable = True)
+            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)#, add_learnable = True)
 
             nu_pred = pred_params[0]
             nu = true_params[0]
@@ -119,7 +119,7 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
         # func_model.posterior.hidden = func_model.posterior.init_hidden()
         # func_model.prior.hidden = func_model.prior.init_hidden()
 
-#     print(f'predict_many_steps - prior_epses: {prior_epses}')
+    # print(f'predict_many_steps - prior_epses: {prior_epses}')
     # pdb.set_trace()
     #initial condition - condition on n_past frames
     gen_seq = gt_seq[0:opt.n_past]
@@ -268,7 +268,7 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
         true_loss_collector = []
         # TODO: set requires_grad=False for the outer params
         if opt.tailor:
-            # print("TAILORING")
+            print("TAILORING")
             for inner_step in range(opt.num_inner_steps):
                 if 'reuse_lstm_eps' not in kwargs or not kwargs['reuse_lstm_eps']:
                     # print('not re-use lstm eps')
