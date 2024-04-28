@@ -31,37 +31,26 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
             embs.append(pde_value)
             param_loss.append(val_nu_loss)
     elif num_emb_frames >1:
+        # print("len(gen_seq)",len(gen_seq),"num_emb_frames",num_emb_frames)
         assert(len(gen_seq) >= num_emb_frames)
         stacked_gen_seq = []
         for i in range(num_emb_frames, len(gen_seq)+1):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
         val_nu_loss = 0
-        if (hasattr(opt,'use_init_frames_for_params')) == True and opt.use_init_frames_for_params == True:
-            u_init = torch.stack(gen_seq[0:opt.n_past], dim=1)
+        for frame in stacked_gen_seq:
             if (hasattr(opt, 'frozen_val_emb') == False) and (hasattr(opt, 'frozen_train_emb') == False):
-                pde_value, true_pde_value, init_cond_params = fmodel(u_init, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
+                pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
             elif (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
                 if setting == 'eval' and opt.frozen_val_emb == True:
-                    pde_value, true_pde_value, init_cond_params = fmodel(u_init, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                    pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
                 elif setting == 'train' and opt.frozen_train_emb == True:
-                    pde_value, true_pde_value, init_cond_params = fmodel(u_init, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                    pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
                 else:
-                    pde_value, true_pde_value, init_cond_params = fmodel(u_init, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
-        for frame in stacked_gen_seq:
-            if (hasattr(opt,'use_init_frames_for_params')) == False or opt.use_init_frames_for_params == False:
-                if (hasattr(opt, 'frozen_val_emb') == False) and (hasattr(opt, 'frozen_train_emb') == False):
                     pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
-                elif (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
-                    if setting == 'eval' and opt.frozen_val_emb == True:
-                        pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
-                    elif setting == 'train' and opt.frozen_train_emb == True:
-                        pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
-                    else:
-                        pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
-            else:
-                pde_value, true_pde_value, pred_params = fmodel(frame, true_params = init_cond_params, mode='true_emb', return_params = True, opt = opt)#, add_learnable = True)
+            # if setting == 'comp':
                 
+
             nu_pred = pred_params[0].to(torch.cuda.current_device())
             nu = true_params[0].to(torch.cuda.current_device())
             val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
@@ -197,10 +186,7 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
                 # condition on last n_past generated frames
                 # 
                 if opt.conditioning:
-                    if opt.single_field == True:
-                        tiled_seq = [field for field in gen_seq[-opt.n_past:]] + [phi_hat]
-                    if opt.single_field == False:
-                        tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gen_seq[-opt.n_past:]]
+                    tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gen_seq[-opt.n_past:]]
                     x_in = torch.cat(tiled_seq, dim = 1)
                 else:
                     x_in = torch.cat(gen_seq[-opt.n_past:], dim =1)
@@ -209,10 +195,7 @@ def predict_many_steps(func_model, gt_seq, true_params, opt, mode='eval', prior_
             gt = gt_seq[i]
             #condition on last n_past ground truth frames (teacher forcing)
             if opt.conditioning:
-                if opt.single_field == True:
-                    tiled_seq = [field for field in gen_seq[-opt.n_past:]] + [phi_hat]
-                if opt.single_field == False:
-                    tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gen_seq[-opt.n_past:]]
+                tiled_seq = [torch.cat([field, phi_hat],dim = 1) for field in gt_seq[(i-opt.n_past):i]]
                 x_in = torch.cat(tiled_seq, dim = 1)
             else:
                 x_in = torch.cat(gt_seq[(i-opt.n_past):i], dim = 1)
@@ -615,7 +598,7 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
 
     # print(f'    avg INNER losses: {sum(tailor_losses) / len(tailor_losses)}')
     # track metrics
-    inner_opt.zero_grad()
+    
     if 'cn_norm_tracker' in kwargs:
         if opt.use_cn:
             if cn_tailored_params != None:
@@ -683,8 +666,6 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
         kwargs['true_frames_pde_loss'].append(true_frames_pde_loss)
     if 'true_frames_param_loss' in kwargs:
         kwargs['true_frames_param_loss'].append(true_frames_param_losses)
-    if 'param_collector' in kwargs:
-        kwargs['param_collector'].append([nu, nu_pred])
 
     # we need the first and second order statistics of the posterior and prior for outer (SVG) loss
     return final_gen_seq, mus, logvars, mu_ps, logvar_ps

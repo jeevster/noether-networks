@@ -6,7 +6,7 @@ import math
 import h5py
 import numpy as np
 import glob
-
+import pdb
 
 class CropUpperRight(torch.nn.Module):
     def __init__(self, w):
@@ -72,6 +72,101 @@ class TwoDReacDiff(object):
             vid = vid[::self.frame_step]  # only take the video frames
 
         return vid
+
+
+# class TwoDReacDiff_MultiParam(object):
+#     """Data Loader that loads multiple parameter version of 2D ReacDiff dataset"""
+
+#     def __init__(self, data_root, train=True,
+#                  seq_len=101, image_size=128, length=-1, percent_train=.8,
+#                  frame_step=1,
+#                  shuffle=False, num_param_combinations=-1, fixed_ic = False, fixed_window = False):
+#         '''
+#         if length == -1, use all sequences available
+#         '''
+#         self.data_root = data_root 
+#         self.seq_len = seq_len
+#         self.image_size = image_size
+#         self.frame_step = frame_step
+#         self.length = length
+#         self.train = train
+#         self.h5_paths = glob.glob(f"{self.data_root}/*.h5")
+#         self.h5_files = []
+#         self.seqs = []
+#         for path in self.h5_paths:
+#             h5_file = h5py.File(path, "r")
+#             indicies = list(h5_file.keys())
+#             self.seqs.append([i for i in range(len(indicies))])
+#             self.h5_files.append([])
+#             for seq in indicies:
+#                 try:
+#                     self.h5_files[-1].append(np.array(h5_file[f"{seq.item()}/data"][:], dtype="f"))
+#                 except:
+#                     self.h5_files[-1].append(np.array(h5_file[f"{seq}/data"][:], dtype="f"))
+#         self.num_param_combinations = num_param_combinations
+#         self.fixed_ic = fixed_ic
+#         self.fixed_window = fixed_window
+
+
+#         if shuffle:
+#             print('shuffling dataset')
+#             random.Random(1612).shuffle(self.seqs)
+#             random.Random(1612).shuffle(self.h5_paths)
+#             random.Random(1612).shuffle(self.h5_files)
+#         if num_param_combinations > 0:
+#             print(f'trimming dataset from length {len(self.seqs)} to {num_param_combinations}')
+#             self.seqs = self.seqs[:num_param_combinations]
+#             self.h5_paths = self.h5_paths[:num_param_combinations]
+#             self.h5_files = self.h5_files[:num_param_combinations]
+#         #split data into train and val according to parameters
+#         if train:
+#             self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
+#             self.h5_paths = self.h5_paths[:int(len(self.h5_paths)*percent_train)]
+#             self.h5_files = self.h5_files[:int(len(self.h5_files)*percent_train)]
+#         else:
+#             self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
+#             self.h5_paths = self.h5_paths[int(len(self.h5_paths)*percent_train):]
+#             self.h5_files = self.h5_files[int(len(self.h5_files)*percent_train):]
+        
+#         print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
+
+#     def extract_params_from_path(self, path):
+#         name = os.path.basename(path)
+#         elements = name.split("=")[1:]
+#         du = float(elements[0].split("_")[0])
+#         dv = float(elements[1].split("_")[0])
+#         k = float(elements[2].split(".")[0] + "." + elements[2].split(".")[1])
+#         return k, du, dv
+
+
+#     def __len__(self):
+#         return len(self.seqs)
+        
+              
+#     def __getitem__(self, index):
+#         param = index
+#         seqs = self.seqs[param] # choose a file (i.e parameter value)
+#         seq = seqs[0] if self.fixed_ic else np.random.choice(seqs, 1) # choose a random trajectory (i.e IC) within this file from 5 possibilites
+
+#         #get the corresponding trajectory
+#         h5_file = self.h5_files[param]
+#         h5_path = self.h5_paths[param]
+#         k, du, dv = self.extract_params_from_path(h5_path)
+        
+#         #get data
+#         # try:
+#         #     vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
+#         # except:
+#         #     vid = torch.Tensor(np.array(h5_file[f"{seq}/data"], dtype="f")).to(torch.cuda.current_device())
+#         vid = torch.Tensor(h5_file[seq.item()])#.to(torch.cuda.current_device())
+#         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
+#         start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
+#         vid = vid[start:start+self.seq_len].permute((0, 3, 1, 2)) if self.seq_len != -1 else vid[start:-1].permute((0, 3, 1, 2))
+        
+#         if self.frame_step > 1:
+#             vid = vid[::self.frame_step]  # only take the video frames
+#         #return video and parameters    
+#         return vid.reshape(-1, 2, self.image_size, self.image_size), (k, du, dv)
 
 
 class TwoDReacDiff_MultiParam(object):
@@ -146,9 +241,9 @@ class TwoDReacDiff_MultiParam(object):
         
         #get data
         try:
-            vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f")).to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
+            vid = torch.Tensor(np.array(h5_file[f"{seq.item()}/data"], dtype="f"))#.to(torch.cuda.current_device()) # dim = [101, 128, 128, 2]
         except:
-            vid = torch.Tensor(np.array(h5_file[f"{seq}/data"], dtype="f")).to(torch.cuda.current_device())
+            vid = torch.Tensor(np.array(h5_file[f"{seq}/data"], dtype="f"))#.to(torch.cuda.current_device())
 
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
         start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
@@ -158,5 +253,3 @@ class TwoDReacDiff_MultiParam(object):
             vid = vid[::self.frame_step]  # only take the video frames
         #return video and parameters    
         return vid.reshape(-1, 2, self.image_size, self.image_size), (k, du, dv)
-
-

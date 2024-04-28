@@ -57,9 +57,9 @@ def reaction_diff_2d_residual_compute(u, v, x, y, t, k, du, dv, compute_residual
     v_x, v_y, v_xx, v_yy, v_t = partials_torch(v, x, y, t)
 
     if compute_residual:
-        k = k.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        du = du.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        dv = dv.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        k = k.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(torch.cuda.current_device())
+        du = du.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(torch.cuda.current_device())
+        dv = dv.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(torch.cuda.current_device())
         
         #2d reaction diffusion equations
         ru = u - (u ** 3) - k - v

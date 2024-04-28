@@ -20,14 +20,14 @@ class CropUpperRight(torch.nn.Module):
 class OneD_Advection_Burgers_MultiParam(object):
     """Data Loader that loads multiple parameter version of Advection or Burgers ReacDiff dataset"""
 
-    def __init__(self, burgers ,data_root, train=True,
+    def __init__(self, pde ,data_root, train=True,
                  seq_len=101, image_size=128, length=-1, percent_train=.8,
                  frame_step=1,
-                 shuffle=False, num_param_combinations=-1, fixed_ic = False, fixed_window = False):
+                 shuffle=True, num_param_combinations=-1, fixed_ic = False, fixed_window = False, fno_rnn = False, ood = False):
         '''
         if length == -1, use all sequences available
         '''
-        self.pde = burgers
+        self.pde = pde
         self.data_root = data_root 
         self.seq_len = seq_len
         self.image_size = image_size
@@ -40,7 +40,7 @@ class OneD_Advection_Burgers_MultiParam(object):
         self.num_param_combinations = num_param_combinations
         self.fixed_ic = fixed_ic
         self.fixed_window = fixed_window
-
+        self.fno_rnn = fno_rnn
         if shuffle:
             print('shuffling dataset')
             random.Random(1612).shuffle(self.seqs)
@@ -51,114 +51,73 @@ class OneD_Advection_Burgers_MultiParam(object):
             self.seqs = self.seqs[:num_param_combinations]
             self.h5_paths = self.h5_paths[:num_param_combinations]
             self.h5_files = self.h5_files[:num_param_combinations]
-        if train:
-            self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
-            self.h5_paths = self.h5_paths[:int(len(self.h5_paths)*percent_train)]
-            self.h5_files = self.h5_files[:int(len(self.h5_files)*percent_train)]
+        if ood:
+            # 0.028849327853371208, 0.6926961865675941
+            if train:
+                self.seqs_temp = []
+                self.h5_paths_temp = []
+                self.h5_files_temp = []
+                for idx,path in enumerate(self.h5_paths):
+                    if self.extract_params_from_path(path)[0] >= 0.028849327853371208 and self.extract_params_from_path(path)[0] <= 0.6926961865675941:
+                        self.seqs_temp.append(self.seqs[idx])
+                        self.h5_paths_temp.append(self.h5_paths[idx])
+                        self.h5_files_temp.append(self.h5_files[idx])
+                self.seqs = self.seqs_temp
+                self.h5_paths = self.h5_paths_temp
+                self.h5_files = self.h5_files_temp
+            else:
+                self.seqs_temp = []
+                self.h5_paths_temp = []
+                self.h5_files_temp = []
+                for idx,path in enumerate(self.h5_paths):
+                    if self.extract_params_from_path(path)[0] < 0.028849327853371208 and self.extract_params_from_path(path)[0] > 0.6926961865675941:
+                        self.seqs_temp.append(self.seqs[idx])
+                        self.h5_paths_temp.append(self.h5_paths[idx])
+                        self.h5_files_temp.append(self.h5_files[idx])
+                self.seqs = self.seqs_temp
+                self.h5_paths = self.h5_paths_temp
+                self.h5_files = self.h5_files_temp
         else:
-            self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
-            self.h5_paths = self.h5_paths[int(len(self.h5_paths)*percent_train):]
-            self.h5_files = self.h5_files[int(len(self.h5_files)*percent_train):]
+            if train:
+                self.seqs = self.seqs[:int(len(self.seqs)*percent_train)]
+                self.h5_paths = self.h5_paths[:int(len(self.h5_paths)*percent_train)]
+                self.h5_files = self.h5_files[:int(len(self.h5_files)*percent_train)]
+            else:
+                self.seqs = self.seqs[int(len(self.seqs)*percent_train):]
+                self.h5_paths = self.h5_paths[int(len(self.h5_paths)*percent_train):]
+                self.h5_files = self.h5_files[int(len(self.h5_files)*percent_train):]
 
 
         print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
     def extract_params_from_path(self, path):
-        if self.pde == True:
-            nu = float(path[:-5].split('u')[-1])
-        else:
-            nu = float(path[:-5].split('a')[-1])
-        return nu
+        if self.pde == 'burgers':
+            params = [float(path[:-5].split('u')[-1])]
+        elif self.pde == 'advection':
+            params = [float(path[:-5].split('a')[-1])]
+        elif self.pde == 'diffuion_reaction':
+            nu = float(path.split('_')[-3])
+            rho = float(path.split('_')[-1][:-5])
+            params = [rho, nu]
+        return params
 
 
     def __len__(self):
         return len(self.seqs)
     def __getitem__(self, index):
-        # pdb.set_trace()        
         param = index
         seqs = self.seqs[param] # choose a file (i.e parameter value) from 1372 possibilies
         random_index = np.random.choice(len(seqs['tensor']))
-        seq = seqs['tensor'][0] if self.fixed_ic else seqs['tensor'][random_index]#[0]
-        nu = self.extract_params_from_path(self.h5_paths[param])
+        seq = seqs['tensor'][0] if self.fixed_ic else seqs['tensor'][random_index]
+        params = self.extract_params_from_path(self.h5_paths[param])
         #get data        
-        vid = torch.Tensor(seq).to(torch.float64).to(torch.cuda.current_device())
+        vid = torch.Tensor(seq).to(torch.cuda.current_device())
         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
+        
         start = 50 if self.fixed_window else np.random.randint(50, vid.shape[0] - self.seq_len)
-        vid = vid[start:start+self.seq_len]
-        vid = vid.reshape((vid.shape[0], vid.shape[1], 1))
+        vid = vid[start:start+self.seq_len] if self.seq_len != -1 else vid[start:-1]
+        vid = vid.reshape((vid.shape[0], 1,vid.shape[1], 1))
         
         if self.frame_step > 1:
             vid = vid[::self.frame_step]  # only take the video frames
-        return vid, tuple([nu])
+        return vid, tuple(params)
 
-
-
-# """old loader"""
-# class OneD_Advection_Burgers_MultiParam(object):
-#     """Data Loader that loads multiple parameter version of Advection or Burgers ReacDiff dataset"""
-
-#     def __init__(self, burgers ,data_root, train=True,
-#                  seq_len=101, image_size=128, length=-1, percent_train=.8,
-#                  frame_step=1,
-#                  shuffle=False, num_param_combinations=-1, fixed_ic = False, fixed_window = False):
-#         '''
-#         if length == -1, use all sequences available
-#         '''
-#         self.pde = burgers
-#         self.data_root = data_root 
-#         self.seq_len = seq_len
-#         self.image_size = image_size
-#         self.frame_step = frame_step
-#         self.length = length
-#         self.train = train
-#         self.h5_paths = glob.glob(f"{self.data_root}/*.hdf5")
-#         self.h5_files = [(h5py.File(file, "r"),file) for file in self.h5_paths]
-#         self.seqs = [(h5py.File(file, "r"),file) for file in self.h5_paths]
-#         self.num_param_combinations = num_param_combinations
-#         self.fixed_ic = fixed_ic
-#         self.fixed_window = fixed_window
-#         if shuffle:
-#             print('shuffling dataset')
-#             random.Random(1612).shuffle(self.seqs)
-#         if length > 0:
-#             print(f'trimming dataset from length {len(self.seqs)} to {length}')
-#             self.seqs = [(seq['tensor'][:length], file) for seq,file in self.seqs]
-#         if train:
-#             # pdb.set_trace()
-#             self.seqs = [(seq['tensor'][:int((30)*percent_train)], file) for seq,file in self.seqs]
-#         else:
-#             self.seqs = [(seq['tensor'][int((30)*percent_train):30], file) for seq,file in self.seqs]
-
-#         print(f"Initialized {'train' if train else 'val'} dataset with {len(self.seqs)} parameter combinations")
-#     def extract_params_from_path(self, path):
-#         if self.pde == True:
-#             nu = float(path[:-5].split('u')[-1])
-#         else:
-#             nu = float(path[:-5].split('a')[-1])
-#         return nu
-
-
-#     def __len__(self):
-#         if self.train:
-#             return self.num_param_combinations if self.num_param_combinations > 0 else len(self.seqs) #* 4 # only 20 param combinations - test overfitting
-#         else:
-#             return int(self.num_param_combinations/4) if self.num_param_combinations > 0 else int(len(self.seqs)/4) #* 4 # number of [parameter, trajectory, window] combinations we see per epoch
-#     def __getitem__(self, index):
-#         # pdb.set_trace()
-#         param = index
-#         seqs = self.seqs[param][0] # choose a file (i.e parameter value) from 1372 possibilies
-#         random_index = np.random.choice(len(seqs))#len(seqs['tensor']))
-
-#         seq = seqs[0] if self.fixed_ic else seqs[random_index]
-
-#         nu = self.extract_params_from_path(self.seqs[param][1])
-        
-
-#         vid = torch.Tensor(seq).to(torch.float64).to(torch.cuda.current_device())
-#         #sample a random window from this trajectory starting at 20 to get rid of high residuals (101 - 20 - self.seq_len possibilities)
-#         start = 20 if self.fixed_window else np.random.randint(20, vid.shape[0] - self.seq_len)
-#         vid = vid[start:start+self.seq_len]
-#         vid = vid.reshape((vid.shape[0], vid.shape[1], 1))
-        
-#         if self.frame_step > 1:
-#             vid = vid[::self.frame_step]  # only take the video frames
-#         return vid, tuple([nu])

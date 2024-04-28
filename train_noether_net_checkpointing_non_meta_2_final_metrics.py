@@ -30,14 +30,17 @@ from models.OneD_embeddings import OneDEmbedding
 import models.lstm as lstm_models
 import matplotlib.pyplot as plt
 from neuraloperator.neuralop.models import FNO, FNO1d, CNFNO, CNFNO1d
-
+import pickle
 from torchinfo import summary
-
+from sklearn.metrics import r2_score
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--reload_dir', type = str, default = 'original',
+                    help = 'pde loss choice')
+
 parser.add_argument('--train_noether', default=True, type=bool, help='dummy flag indicating we are training the joint noether model. DO NOT CHANGE')
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 parser.add_argument('--train_batch_size', default=16, type=int, help='batch size')
@@ -196,6 +199,9 @@ parser.add_argument('--reload_best_svg', action='store_true',
 parser.add_argument('--num_param_combinations', type=int,default=-1)
 parser.add_argument('--fixed_ic', action='store_true')
 parser.add_argument('--fixed_window', action='store_true')
+
+parser.add_argument('--frozen_pinn_loss', action = 'store_true',
+                    help='to use frozen pretrained embedding in outer PINSS loss')
 parser.add_argument('--learned_pinn_loss', action = 'store_true',
                     help='to use learnable embedding in outer PINSS loss')
 parser.add_argument('--no_data_loss',action = 'store_true',
@@ -224,8 +230,6 @@ parser.add_argument('--cn_demo', action = 'store_true',
                     help = 'to use only tailor at test time and not training time')
 parser.add_argument('--outer_loss_choice', type = str, default = 'original',
                     help = 'pde loss choice')
-parser.add_argument('--reload_dir', type = str, default = 'original',
-                    help = 'pde loss choice')
 parser.add_argument('--mean_reduction', action = 'store_true',
                     help = 'take mean of inner losses')
 parser.add_argument('--relative_data_loss', action = 'store_true',
@@ -236,12 +240,33 @@ parser.add_argument('--frozen_train_emb', action = 'store_true',
                     help = 'take relative data loss for optimization')
 parser.add_argument('--frozen_val_emb', action = 'store_true',
                     help = 'take relative data loss for optimization')
+parser.add_argument('--emmbedding_residual_loss', action = 'store_true',
+                    help = 'take embedding residual loss')
+parser.add_argument('--emmbedding_param_loss', action = 'store_true',
+                    help = 'take embedding residual loss')
+parser.add_argument('--use_init_frames_for_params', action = 'store_true',
+                    help = 'take initial frames only to comput parameters for the embedding')
+parser.add_argument('--GLU', action = 'store_true',
+                    help = 'use the GLU activate with conditioning')
+parser.add_argument('--GLU_conv', action = 'store_true',
+                    help = 'use the GLU with convolution activate with conditioning')
+parser.add_argument('--single_field', action = 'store_true',
+                    help = 'add parameter field only once')
+parser.add_argument('--param_scale_shift_conditioning', action='store_true',
+                    help = 'conditioning using scale and shift')
+parser.add_argument('--data_loss_reg', type=float,default = 1.0, 
+                    help='regularization constant for data loss')
+parser.add_argument('--pde_loss_reg', type=float,default = 1.0, 
+                    help='regularization constant for data loss')
+parser.add_argument('--ood', action = 'store_true',
+                    help='ood exp for advection')
+
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
 opt = parser.parse_args()
 os.makedirs('%s' % opt.log_dir, exist_ok=True)
 
-opt.n_eval = opt.n_past+opt.n_future if opt.n_future != -1 else -1
+opt.n_eval = opt.n_past+opt.n_future
 opt.max_step = opt.n_eval
 
 if opt.image_width == 64:
@@ -259,6 +284,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
+np.random.seed(opt.seed)
 # dtype = torch.cuda.DoubleTensor
 dtype = torch.cuda.FloatTensor
 
@@ -324,12 +350,7 @@ train_loader = DataLoader(train_data,
                           shuffle=True,
                           drop_last=True,
                           pin_memory=False)
-# test_loader = DataLoader(train_data,
-#                           num_workers=opt.num_threads,
-#                           batch_size=opt.val_batch_size if opt.val_batch_size else opt.batch_size,
-#                           shuffle=True,
-#                           drop_last=True,
-#                           pin_memory=False)
+
 test_loader = DataLoader(test_data,
                         num_workers=opt.num_threads,
                         batch_size=opt.val_batch_size  if opt.val_batch_size else opt.batch_size,
@@ -425,20 +446,26 @@ for trial_num in range(opt.num_trials):
         opt.a_dim = 0 if not opt.use_action else opt.a_dim
         # dynamics model
         if opt.dataset in  set(['1d_burgers_multiparam','1d_advection_multiparam','1d_diffusion_reaction_multiparam']):
-            extra_param_channel = 1
+            extra_param_channel = 0
+            
+            if opt.conditioning and opt.dataset in  set(['1d_burgers_multiparam','1d_advection_multiparam']):
+                extra_param_channel = 1 * opt.n_past if opt.single_field == False else 1
             if opt.conditioning and opt.dataset == '1d_diffusion_reaction_multiparam':
-                extra_param_channel = 2
+                extra_param_channel = 2 * opt.n_past if opt.single_field == False else 2
+            
+            in_channels = (opt.channels * opt.n_past) + extra_param_channel if opt.param_scale_shift_conditioning == False else (opt.channels * opt.n_past)
 
             frame_predictor = CNFNO1d(n_modes_height=opt.fno_modes, 
                                     hidden_channels=opt.fno_width,
-                                    in_channels=(opt.channels + extra_param_channel) * opt.n_past if opt.conditioning else (opt.channels)*opt.n_past, 
+                                    in_channels=in_channels,
                                     out_channels=opt.channels, 
                                     n_layers=opt.fno_layers,
                                     norm = opt.norm if opt.norm != '' else None,
                                     #### CN Layer Parameters ####
                                     val_batch_size = opt.val_batch_size,
                                     train_batch_size = opt.train_batch_size,
-                                    use_cn = opt.use_cn)
+                                    use_cn = opt.use_cn,
+                                    param_scale_shift_conditioning = 0 if opt.param_scale_shift_conditioning == False else extra_param_channel)
 
             if opt.add_general_learnable == True:
             # print("h1")
@@ -466,15 +493,22 @@ for trial_num in range(opt.num_trials):
         # frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
         else:
             print("2d fno")
+            extra_param_channel = 0
+            if opt.conditioning and opt.dataset:
+                extra_param_channel = 3 * opt.n_past if opt.single_field == False else 3
+            
+            in_channels = (opt.channels * opt.n_past) + extra_param_channel
             frame_predictor = CNFNO(n_modes=(opt.fno_modes, opt.fno_modes), 
                                     hidden_channels=opt.fno_width,
-                                    in_channels=(opt.channels + 3) * opt.n_past if opt.conditioning else opt.channels * opt.n_past, 
+                                    in_channels=in_channels,
                                     out_channels=opt.channels, 
                                     n_layers=opt.fno_layers,
                                     val_batch_size = opt.val_batch_size,
                                     train_batch_size = opt.train_batch_size,
                                     use_cn = opt.use_cn,
-                                    norm = opt.norm if opt.norm != '' else None)
+                                    norm = opt.norm if opt.norm != '' else None,
+                                    param_scale_shift_conditioning = 0 if opt.param_scale_shift_conditioning == False else extra_param_channel)
+
 
             if opt.add_general_learnable == True:
                  # print("h1")
@@ -603,17 +637,25 @@ for trial_num in range(opt.num_trials):
 
         # complete model
         svg_model = SVGModel(encoder, frame_predictor,
-                             decoder, prior, posterior, outer_embedding if opt.use_embedding else embedding, true_pde_embedding).cuda()
+                             decoder, prior, posterior, outer_embedding if opt.use_embedding else embedding, true_pde_embedding,opt = opt).cuda()
         svg_model.apply(lambda t: t.cuda())
         if opt.reload_dir:
-            checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt')
+            checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt') if 'ckpt_model.pt' not in opt.reload_dir else opt.reload_dir
             checkpoint = torch.load(checkpoint_path, map_location= device)
             # if opt.frozen_val_emb == True:
-            #     pdb.set_trace()
-            svg_model.frozen_emb = svg_model.emb
-            svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
-            svg_model.load_state_dict(checkpoint['model_state'])
+                # 
+            # svg_model.frozen_emb = svg_model.emb
+            # svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
 
+            # from collections import OrderedDict
+            # new_state_dict = OrderedDict()
+            # state_dict = checkpoint['model_state']
+            # for k, v in state_dict.items():
+            #     name = k[7:] # remove 'module.' of DataParallel/DistributedDataParallel
+            #     new_state_dict[name] = v
+
+            svg_model.load_state_dict(checkpoint['model_state'])
+            # svg_model.load_state_dict(new_state_dict)
         # if (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
         #     svg_model.frozen_emb = svg_model.emb
         #     svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
@@ -780,6 +822,8 @@ for trial_num in range(opt.num_trials):
     val_mse_losses = []
     val_rel_losses = []
     val_param_losses = []
+    val_prediction_collector = []
+    param_collector = []
     for epoch in range(1):
         if epoch % opt.num_epochs_per_val == 0:
         # with torch.no_grad():
@@ -788,7 +832,6 @@ for trial_num in range(opt.num_trials):
             val_relative_loss = 0.
             val_outer_optimizing_loss = 0.
             baseline_outer_loss = 0.
-
             svg_model.eval()
             
             val_cn_diffs = [[],[],[]]
@@ -798,7 +841,6 @@ for trial_num in range(opt.num_trials):
                 print(batch_num)
                 batch, params = next(testing_batch_generator)
                 params = tuple([param for param in params])
-
                 with torch.no_grad():
                     # we optionally evaluate a baseline (untailored) model for comparison
                     prior_epses = []
@@ -836,9 +878,8 @@ for trial_num in range(opt.num_trials):
                 
                 val_batch_abs_inner_gain = []
                 val_batch_true_abs_inner_gain = []
-                
                 val_batch_data_gain = []
-                
+                val_batch_gt_param_losses = []
                 val_loss = 0
                 val_true_loss = 0
                 val_nu_loss = 0
@@ -848,8 +889,9 @@ for trial_num in range(opt.num_trials):
                 val_rho_loss = 0
                 val_batch_sols = []
                 val_batch_params = []
-                # pdb.set_trace()
+                # 
                 for batch_step in range(opt.num_jump_steps + 1):
+                    print("1",torch.cuda.max_memory_allocated())
                     # jump steps are effectively inner steps that have a single higher innerloop_ctx per
                     # iteration, which allows for many inner steps during training without running
                     # into memory issues due to storing the whole dynamic computational graph
@@ -857,16 +899,16 @@ for trial_num in range(opt.num_trials):
                     # perform tailoring (autoregressive prediction, tailoring, predict again)
                     # len
                     # batch, params = next(testing_batch_generator)
-                    # params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
+                    params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
                     # batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
                     # batch -> length npast + nfut [(16,1,1024,1)]
                     # [].append(a) ->
-                    batch_norm_sum = 0
-                    for data in batch:
-                        batch_norm_sum += torch.sum(torch.norm(data,dim = (2,3))[:,0])
-                    batch_norm_avg = batch_norm_sum / (len(batch) * opt.batch_size)
-                    val_batch_sols.append(batch_norm_avg)
-                    val_batch_params.extend([torch.norm(param) / opt.batch_size for param in params])
+                    # batch_norm_sum = 0
+                    # for data in batch:
+                    #     batch_norm_sum += torch.sum(torch.norm(data,dim = (2,3))[:,0])
+                    # batch_norm_avg = batch_norm_sum / (len(batch) * opt.batch_size)
+                    # val_batch_sols.append(batch_norm_avg)
+                    # val_batch_params.extend([torch.norm(param) / opt.batch_size for param in params])
                     
                     if opt.use_embedding:
                         stacked_batch = torch.stack(batch[:opt.num_emb_frames], dim =1)
@@ -903,6 +945,7 @@ for trial_num in range(opt.num_trials):
                     if opt.cn_demo:
                         opt.tailor = True
                     #Tailor many steps uses opt.tailor to decide whether to tailor or not
+                    svg_model.zero_grad(set_to_none=True)
                     gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
                         # no need for higher grads in val
                         svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
@@ -925,6 +968,7 @@ for trial_num in range(opt.num_trials):
                         only_cn_decoder=opt.only_cn_decoder,
                         save_dir = save_dir,
                         true_frames_pde_loss = val_batch_true_gt_log_inner_loss,
+                        true_frames_param_loss = val_batch_gt_param_losses,
                         # fstate_dict=val_fstate_dict,
                         cached_cn=val_cached_cn,
                         load_cached_cn=(batch_step != 0),
@@ -932,11 +976,13 @@ for trial_num in range(opt.num_trials):
                         phi_hat = None if opt.conditioning == False else phi_hat.float().to(torch.cuda.current_device()),
                         cn_norm_tracker = val_cn_diffs,
                         normal_norm_tracker = val_normal_diffs,
-                        data_gain = val_batch_data_gain
+                        data_gain = val_batch_data_gain,
+                        param_collector = param_collector,
                     )
                     svg_model.zero_grad(set_to_none=True)
                     with torch.no_grad():
                         # compute outer (task) loss
+                        
                         if opt.learned_pinn_loss and opt.pinn_outer_loss:
                             opt_outer_mse_loss, outer_pde_loss,outer_avg_pde_residual, outer_mse_loss, outer_relative_loss, outer_log_loss = svg_crit(
                                 gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt, 
@@ -957,9 +1003,49 @@ for trial_num in range(opt.num_trials):
                         else:
                             outer_loss = opt_outer_mse_loss + outer_pde_loss
                         total_val_loss = outer_loss if opt.use_embedding == False else val_embedding_loss + outer_loss
+                        # val_prediction_collector.append([gen_seq, batch,params[0]])
+                        # gen_seq = val_prediction_collector[sorted_idx][0]
+                        # batch = val_prediction_collector[sorted_idx][1]
+                        
+
+                        # fig, axes = plt.subplots(2,2)
+                        # var_1_gt = batch[-2][0,0].detach().cpu().numpy()
+                        # var_1_pred = gen_seq[-2][0,0].detach().cpu().numpy()
+                        
+                        # dif = axes[0,0].imshow(np.abs(var_1_pred - var_1_gt))
+                        # axes[0,0].title.set_text('frame n = 1')
+                        # axes[0,0].set_ylabel('variable 1')
+                        # plt.colorbar(dif,ax=axes[0,0])
+
+                        # var_1_gt = batch[-1][0,0].detach().cpu().numpy()
+                        # var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
+                        # dif = axes[0,1].imshow(np.abs(var_1_pred - var_1_gt))
+                        # axes[0,1].title.set_text('frame n = 2')
+                        # axes[0,1].set_ylabel('variable 1')
+                        # plt.colorbar(dif,ax=axes[0,1])
+
+                        # var_1_gt = batch[-2][0,1].detach().cpu().numpy()
+                        # var_1_pred = gen_seq[-2][0,1].detach().cpu().numpy()
+                        
+                        # dif = axes[1,0].imshow(np.abs(var_1_pred - var_1_gt))
+                        # axes[1,0].title.set_text('frame n = 1')
+                        # axes[1,0].set_ylabel('variable 2')
+                        # plt.colorbar(dif,ax=axes[1,0])
+
+                        # var_1_gt = batch[-1][0,1].detach().cpu().numpy()
+                        # var_1_pred = gen_seq[-1][0,1].detach().cpu().numpy()
+                        # dif = axes[1,1].imshow(np.abs(var_1_pred - var_1_gt))
+                        # axes[1,1].title.set_text('frame n = 2')
+                        # axes[1,1].set_ylabel('variable 2')
+                        # plt.colorbar(dif,ax=axes[1,1])
+
+                        # fig.tight_layout()
+                        # plt.suptitle(f'relative loss: {val_rel_losses[-1]:0.3}')
+                        # plt.show()
+                        # plt.savefig(f"{save_dir}/pred_{val_rel_losses[-1]:0.3}.jpg")
                         val_rel_losses.append(outer_relative_loss.detach().cpu().item())
                         val_pde_losses.append(outer_avg_pde_residual.detach().cpu().item())
-                        val_param_losses.append(val_batch_inner_param_losses[-1])
+                        val_param_losses.append(val_batch_gt_param_losses[-1])
                         val_mse_losses.append(outer_mse_loss.detach().cpu().item())
                         # print(val_param_losses)
                         #SR: want to log inner losses for all tailoring steps, not just the first step
@@ -969,72 +1055,187 @@ for trial_num in range(opt.num_trials):
                     val_outer_optimizing_loss += total_val_loss.detach().cpu().item()
                     if opt.baseline:
                         baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
+        gt = []
+        pred = []
+        for nu, nu_pred in param_collector:
+            gt.append(nu.detach().cpu().item())
+            pred.append(nu_pred.detach().cpu().item())
+        r2 = r2_score(gt, pred)
         os.makedirs(save_dir, exist_ok = True)
         f = open(f"{save_dir}/losses.txt", "w")
         f.write(f'mse mean:{np.mean([rel_loss for rel_loss in val_mse_losses if math.isfinite(rel_loss)]):.3}+-{np.std([rel_loss for rel_loss in val_mse_losses if math.isfinite(rel_loss)]):.3} \n')
         f.write(f'rel mean:{np.mean([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]):.3}+-{np.std([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]):.3} \n')
         f.write(f'pde res mean:{np.mean([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]):.3}+-{np.std([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]):.3} \n')
         f.write(f'param init mean: {np.mean([rel_loss[-1] for rel_loss in val_param_losses]):.3}+-{np.std([rel_loss[-1] for rel_loss in val_param_losses]):.3}')
+        f.write(f'R2: {r2}')
         f.close()                            
+        
+        save_dict = {'mse_mean':np.mean([rel_loss for rel_loss in val_mse_losses if math.isfinite(rel_loss)]),
+                     'rel_mean':np.mean([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]),
+                     'pde_res_mean':np.mean([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]),
+                     'param_init_mean':np.mean([rel_loss[-1] for rel_loss in val_param_losses]),
+                     'r2':r2}
 
-        if '1d' in opt.dataset:
-            plt.figure()
-            plt.plot(gen_seq[-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-            plt.plot(batch[-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-            plt.legend()
-            plt.xlabel('x-spatial coordinates')
-            plt.show()
-            plt.savefig(f"{save_dir}/pred.jpg")
-        else:
-            var_1_gt = batch[-1][0,0].detach().cpu().numpy()
-            var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
+        with open(f'{save_dir}/saved_dictionary.pkl', 'wb') as f:
+            pickle.dump(save_dict, f)
+        # if '1d' in opt.dataset:
+        #     val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
+        #     if 'burgers' not in opt.dataset: 
+        #         sorted_indices = np.argsort(val_rel_losses)
+        #         print(sorted_indices)
+        #         for img_idx, sorted_idx in enumerate(sorted_indices):
+        #             plt.figure()
+        #             plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+        #             plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+        #             plt.legend()
+        #             plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
+        #             plt.xlabel('x-spatial coordinates')
+        #             plt.show()
+        #             plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+        #     else:
+        #         sorted_indices = np.argsort(val_mse_losses)
+        #         for img_idx, sorted_idx in enumerate(sorted_indices):
+        #             plt.figure()
+        #             plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+        #             plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+        #             plt.legend()
+        #             plt.title(f'mse: {val_mse_losses[img_idx]:0.3}')
+        #             plt.xlabel('x-spatial coordinates')
+        #             plt.show()
+        #             plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+        #     gt = []
+        #     pred = []
+        #     for nu, nu_pred in param_collector:
+        #         gt.append(nu.detach().cpu().item())
+        #         pred.append(nu_pred.detach().cpu().item())
+        #     plt.figure()
+        #     plt.scatter(x = gt, y = pred)
+        #     plt.plot([min(gt),max(gt)],[min(gt),max(gt)], color = 'black')
+        #     plt.xlabel('gt')
+        #     plt.ylabel('pred')
+        #     plt.title('parameters ground truth vs predicted')
+        #     plt.show()
+        #     plt.savefig(f"{save_dir}/pred_params.jpg")
 
-            fig, axes = plt.subplots(nrows=3)
-            im = axes[0].imshow(var_1_gt)
-            axes[0].title.set_text('var 1 gt')
-            axes[0].set_xlabel('x_coordinate')
-            axes[0].set_ylabel('y_coordinate')
-            plt.colorbar(im,ax=axes[0])
+        # else:
 
-            axes[1].imshow(var_1_pred)
-            axes[1].title.set_text('var 1 pred')
-            axes[1].set_xlabel('x_coordinate')
-            axes[1].set_ylabel('y_coordinate')
-            plt.colorbar(im,ax=axes[1])
-            
-            dif = axes[2].imshow(np.abs(var_1_pred - var_1_gt))
-            axes[2].title.set_text('absolute difference')
-            axes[2].set_xlabel('x_coordinate')
-            axes[2].set_ylabel('y_coordinate')
-            plt.colorbar(dif,ax=axes[2])
+            # sorted_indices = np.argsort(val_rel_losses)
+            # print(sorted_indices)
+            # for img_idx, sorted_idx in enumerate(sorted_indices):
+                # plt.figure()
+                # plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+                # plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+                # plt.legend()
+                # plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
+                # plt.xlabel('x-spatial coordinates')
+                # plt.show()
+                # plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
 
-            fig.tight_layout()
-            plt.show()
-            plt.savefig(f"{save_dir}/var_1")
-
-
-            var_2_gt = batch[-1][0,1].detach().cpu().numpy()
-            var_2_pred = gen_seq[-1][0,1].detach().cpu().numpy()
-
-            fig, axes = plt.subplots(nrows=3)
-            im = axes[0].imshow(var_2_gt)
-            axes[0].title.set_text('var 2 gt')
-            axes[0].set_xlabel('x_coordinate')
-            axes[0].set_ylabel('y_coordinate')
-            plt.colorbar(im,ax=axes[0])
+                # gen_seq = val_prediction_collector[sorted_idx][0]
+                # batch = val_prediction_collector[sorted_idx][1]
                 
-            axes[1].imshow(var_2_pred)
-            axes[1].title.set_text('var 2 pred')
-            axes[1].set_xlabel('x_coordinate')
-            axes[1].set_ylabel('y_coordinate')
-            plt.colorbar(im,ax=axes[1])
+                # var_1_gt = batch[-1][0,0].detach().cpu().numpy()
+                # var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
 
-            dif = axes[2].imshow(np.abs(var_2_pred - var_2_gt))
-            axes[2].title.set_text('absolute difference')
-            axes[2].set_xlabel('x_coordinate')
-            axes[2].set_ylabel('y_coordinate')
-            plt.colorbar(dif,ax=axes[2])
+                # fig, axes = plt.subplots(nrows=3)
+                # im = axes[0].imshow(var_1_gt)
+                # axes[0].title.set_text('var 1 gt')
+                # axes[0].set_xlabel('x_coordinate')
+                # axes[0].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[0])
 
-            fig.tight_layout()
-            plt.show()
-            plt.savefig(f"{save_dir}/var_2")
+                # axes[1].imshow(var_1_pred)
+                # axes[1].title.set_text('var 1 pred')
+                # axes[1].set_xlabel('x_coordinate')
+                # axes[1].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[1])
+                
+                # dif = axes[2].imshow(np.abs(var_1_pred - var_1_gt))
+                # axes[2].title.set_text('absolute difference')
+                # axes[2].set_xlabel('x_coordinate')
+                # axes[2].set_ylabel('y_coordinate')
+                # plt.colorbar(dif,ax=axes[2])
+
+                # fig.tight_layout()
+                # plt.show()
+                # plt.savefig(f"{save_dir}/var_1_{img_idx}_frame=2_{rel_loss}")
+
+
+                # var_2_gt = batch[-1][0,1].detach().cpu().numpy()
+                # var_2_pred = gen_seq[-1][0,1].detach().cpu().numpy()
+
+                # fig, axes = plt.subplots(nrows=3)
+                # im = axes[0].imshow(var_2_gt)
+                # axes[0].title.set_text('var 2 gt')
+                # axes[0].set_xlabel('x_coordinate')
+                # axes[0].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[0])
+                    
+                # axes[1].imshow(var_2_pred)
+                # axes[1].title.set_text('var 2 pred')
+                # axes[1].set_xlabel('x_coordinate')
+                # axes[1].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[1])
+
+                # dif = axes[2].imshow(np.abs(var_2_pred - var_2_gt))
+                # axes[2].title.set_text('absolute difference')
+                # axes[2].set_xlabel('x_coordinate')
+                # axes[2].set_ylabel('y_coordinate')
+                # plt.colorbar(dif,ax=axes[2])
+
+                # fig.tight_layout()
+                # plt.show()
+                # plt.savefig(f"{save_dir}/var_2_{img_idx}_frame=2_{rel_loss}")
+
+                # var_1_gt = batch[-2][0,0].detach().cpu().numpy()
+                # var_1_pred = gen_seq[-2][0,0].detach().cpu().numpy()
+
+                # fig, axes = plt.subplots(nrows=3)
+                # im = axes[0].imshow(var_1_gt)
+                # axes[0].title.set_text('var 1 gt')
+                # axes[0].set_xlabel('x_coordinate')
+                # axes[0].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[0])
+
+                # axes[1].imshow(var_1_pred)
+                # axes[1].title.set_text('var 1 pred')
+                # axes[1].set_xlabel('x_coordinate')
+                # axes[1].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[1])
+                
+                # dif = axes[2].imshow(np.abs(var_1_pred - var_1_gt))
+                # axes[2].title.set_text('absolute difference')
+                # axes[2].set_xlabel('x_coordinate')
+                # axes[2].set_ylabel('y_coordinate')
+                # plt.colorbar(dif,ax=axes[2])
+
+                # fig.tight_layout()
+                # plt.show()
+                # plt.savefig(f"{save_dir}/var_1_{img_idx}_frame=1_{rel_loss}")
+
+
+                # var_2_gt = batch[-2][0,1].detach().cpu().numpy()
+                # var_2_pred = gen_seq[-2][0,1].detach().cpu().numpy()
+
+                # fig, axes = plt.subplots(nrows=3)
+                # im = axes[0].imshow(var_2_gt)
+                # axes[0].title.set_text('var 2 gt')
+                # axes[0].set_xlabel('x_coordinate')
+                # axes[0].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[0])
+                    
+                # axes[1].imshow(var_2_pred)
+                # axes[1].title.set_text('var 2 pred')
+                # axes[1].set_xlabel('x_coordinate')
+                # axes[1].set_ylabel('y_coordinate')
+                # plt.colorbar(im,ax=axes[1])
+
+                # dif = axes[2].imshow(np.abs(var_2_pred - var_2_gt))
+                # axes[2].title.set_text('absolute difference')
+                # axes[2].set_xlabel('x_coordinate')
+                # axes[2].set_ylabel('y_coordinate')
+                # plt.colorbar(dif,ax=axes[2])
+
+                # fig.tight_layout()
+                # plt.show()
+                # plt.savefig(f"{save_dir}/var_2_{img_idx}_frame=1_{rel_loss}")

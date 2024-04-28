@@ -1,0 +1,11 @@
+,advection,burgers,react_diff
+run_data_outer_train=learnable_val=learnable,18,17,25
+run_data_outer_train=learnable_val=frozen_param_loss,22,22,14
+run_data_outer_train=learnable_val=frozen_param_loss_init_frames,7,14,4
+run_data_outer_train=learnable_val=learnable_init_frames,9,14,26
+run_data_outer_train=learnable_val=frozen,19,20,15
+run_data_outer_train=frozen_val=frozen,15,19,11
+run_data_outer_train=learnable_val=frozen_init_frames,11,13,7
+run_data_outer_train=learnable_val=learnable_param_loss,18,4,11
+run_data_outer_train=frozen_val=frozen_init_frames,7,10,15
+run_data_outer_train=learnable_val=learnable_param_loss_init_frames,9,2,7

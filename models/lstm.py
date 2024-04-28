@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from neuralop.models import FNO
+from neuraloperator.neuralop.models import FNO
 
 
 class lstm(nn.Module):

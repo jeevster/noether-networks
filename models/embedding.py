@@ -10,7 +10,7 @@ import copy
 import h5py
 import numpy as np
 import deepxde as dde
-from neuralop.models import FNO, FNO1d
+from neuraloperator.neuralop.models import FNO, FNO1d
 from os.path import join
 from functools import partial
 from models.nithin_embedding import reaction_diff_2d_residual_compute
@@ -85,7 +85,7 @@ class ConstantLayer_MultiParam(nn.Module):
         b_size = x.shape[0]
         num_constants = len(constants)
         const_tensor = torch.cat(constants).view(-1, b_size).T
-        const_tensor.requires_grad = False
+        # const_tensor.requires_grad = False
         return const_tensor
 
 
@@ -108,6 +108,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
             self.paramnet = ParameterNet(
                 self.in_size, self.in_channels*self.n_frames, self.hidden_channels, self.n_layers, self.num_learned_parameters).to(self.device)
             self.paramnet = self.paramnet.apply(lambda t: t.cuda())
+            self.paramnet = self.paramnet.apply(lambda t: t.double())
 
         else:
             self.paramnet = ConstantLayer_MultiParam()
@@ -125,7 +126,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         self.dt = (self.t[1] - self.t[0])
 
     # 2D reaction diffusion
-    def forward(self, solution_field, true_params = None, return_params = False):
+    def forward(self, solution_field, true_params = None, return_params = False, opt = False):
         # solution_field = solution_field.reshape(solution_field.shape[0],
         #                                         int(solution_field.shape[1] /
         #                                             self.in_channels), self.in_channels,
@@ -141,8 +142,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
                 partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, None, None, None, compute_residual = False, return_partials = True)
         #predict params using network
         input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
-        params = self.paramnet(input_data) if self.learned else self.paramnet(input_data, *true_params)
-
+        params = self.paramnet(input_data.to(torch.float64)) if self.learned else self.paramnet(input_data.to(torch.float64), *true_params)
         #extract predicted params
         k = params[:, 0]
         #set Du and/or Du to their true values if not learnable
@@ -154,7 +154,7 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
         
         #compute PDE residual
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
-        
+
         if return_params:
             if true_params is not None:
                 return residual, true_residual, (k, Du, Dv)

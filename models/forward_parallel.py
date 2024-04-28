@@ -16,7 +16,7 @@ from utils import svg_crit, compute_losses
 import copy
 
 def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compare_to='prev', setting='train', opt=None, emb_mode = 'emb',
-               learnable_model = None):
+               learnable_model = None, save_dir = None):
     # compute embeddings for sequence
     # 
     param_loss = []
@@ -24,32 +24,63 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
     if num_emb_frames == 1:
         val_nu_loss = 0
         for frame in gen_seq:
-            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)
+            pde_value, _, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)
             nu_pred = pred_params[0]
             nu = true_params[0]
             val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
             embs.append(pde_value)
             param_loss.append(val_nu_loss)
     elif num_emb_frames >1:
+        # print("len(gen_seq)",len(gen_seq),"num_emb_frames",num_emb_frames)
         assert(len(gen_seq) >= num_emb_frames)
         stacked_gen_seq = []
         for i in range(num_emb_frames, len(gen_seq)+1):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-num_emb_frames:i]], dim=1))
         val_nu_loss = 0
+        if (hasattr(opt,'use_init_frames_for_params')) == True and opt.use_init_frames_for_params == True:
+            u_init = torch.stack(gen_seq[0:opt.n_past], dim=1)
+            if (hasattr(opt, 'frozen_val_emb') == False) and (hasattr(opt, 'frozen_train_emb') == False):
+                pde_value, _, init_cond_params = fmodel(u_init, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
+            elif (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
+                if setting == 'eval' and opt.frozen_val_emb == True:
+                    pde_value, _, init_cond_params = fmodel(u_init, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                elif setting == 'train' and opt.frozen_train_emb == True:
+                    pde_value, _, init_cond_params = fmodel(u_init, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                else:
+                    pde_value, _, init_cond_params = fmodel(u_init, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
         for frame in stacked_gen_seq:
-            pde_value, true_pde_value, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True)#, add_learnable = True)
-
+            if (hasattr(opt,'use_init_frames_for_params')) == False or opt.use_init_frames_for_params == False:
+                if (hasattr(opt, 'frozen_val_emb') == False) and (hasattr(opt, 'frozen_train_emb') == False):
+                    pde_value, _, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
+                elif (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
+                    if setting == 'eval' and opt.frozen_val_emb == True:
+                        pde_value, _, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                    elif setting == 'train' and opt.frozen_train_emb == True:
+                        pde_value, _, pred_params = fmodel(frame, true_params = true_params, mode='frozen', return_params = True, opt = opt)#, add_learnable = True)
+                    else:
+                        pde_value, _, pred_params = fmodel(frame, true_params = true_params, mode=emb_mode, return_params = True, opt = opt)#, add_learnable = True)
+            else:
+                pde_value, _, pred_params = fmodel(frame, true_params = init_cond_params, mode='true_emb', return_params = True, opt = opt)#, add_learnable = True)
+                
             nu_pred = pred_params[0].to(torch.cuda.current_device())
             nu = true_params[0].to(torch.cuda.current_device())
             val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
+            if save_dir != None:
+                f = open(f"{save_dir}/prams.txt", "a")
+                f.write(f' predicted:{pred_params[0][0]}_true:{true_params[0][0]} \n')
+                f.close()
+
+                # f = open(f"{save_dir}/pde_residual.txt", "a")
+                # f.write(f' predicted:{pde_value}_true:{true_pde_value} \n #########')
+                # f.close()
             if learnable_model != None:
                 if opt.channels == 1:
                     x_hat = learnable_model(frame[:,:,0,:,0])
-                    pde_value = pde_value + x_hat[:,0,0]
+                    pde_value = x_hat#[:,:,0,:,0]
                 else:
                     x_hat = learnable_model(frame[:,:,:,:,:])
-                    pde_value = pde_value + x_hat[:,0]
+                    pde_value = x_hat[:,0]
             embs.append(pde_value)
             param_loss.append(val_nu_loss)
         assert(len(embs) == len(gen_seq) - num_emb_frames + 1)  
@@ -71,8 +102,8 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
         if torch.is_tensor(_gen_seq):
             _gen_seq = _gen_seq.detach().cpu().numpy()
         elif isinstance(_gen_seq, list):
-            _gen_seq = torch.stack([i.detach()
-                                    for i in _gen_seq]).cpu().numpy()
+            _gen_seq = torch.stack([i.detach().cpu()#.numpy()
+                                    for i in _gen_seq]).detach().cpu().numpy()
         np.save(baseline_fname, np.asarray(_gen_seq))
 
         baseline_fname = f'eval_metrics/embeddings_{experiment_id}'
@@ -117,10 +148,20 @@ def inner_crit(fmodel, gen_seq, true_params, mode='mse', num_emb_frames=1, compa
     # 
     pairwise_abs_inner_losses = torch.stack([torch.norm(emb.view(emb.shape[0], -1), 2, 1).mean() for emb in embs])
     pairwise_log_inner_losses = torch.stack([torch.abs(emb).log10().mean() for emb in embs])
+    if save_dir != None:
+        f = open(f"{save_dir}/prams.txt", "a")
+        f.write(f' predicted:{pred_params[0][0]}_true:{true_params[0][0]} \n')
+        f.close()
+
+        f = open(f"{save_dir}/pde_residual.txt", "a")
+        for emb in embs:
+            f.write(f' predicted emb:{emb}\n #########')
+        f.close()
     # print(torch.stack([torch.norm(emb.view(emb.shape[0], -1), 2, 1).log10().mean() for emb in embs]))
     # print(torch.stack([torch.norm(emb.view(emb.shape[0], -1), 2, 1).mean() for emb in embs]))
+    
     if opt.mean_reduction == False:
-        return torch.sum(pairwise_inner_losses, dim=0), torch.sum(torch.stack(param_loss), dim=0), torch.sum(pairwise_abs_inner_losses, dim = 0), torch.sum(pairwise_log_inner_losses, dim = 0)
+        return torch.sum(pairwise_inner_losses, dim=0), torch.mean(torch.stack(param_loss), dim=0), torch.sum(pairwise_abs_inner_losses, dim = 0), torch.sum(pairwise_log_inner_losses, dim = 0)
     if opt.mean_reduction == True:
         return torch.mean(pairwise_inner_losses, dim=0), torch.mean(torch.stack(param_loss), dim=0), torch.sum(pairwise_abs_inner_losses, dim = 0), torch.sum(pairwise_log_inner_losses, dim = 0)
 
@@ -350,7 +391,7 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                 loss_collector.append(tailor_loss)
                 abs_loss_collector.append(tailor_abs_loss)
                 log_loss_collector.append(tailor_log_loss)
-                #compute true PDE loss if using learnable embedding
+                # compute true PDE loss if using learnable embedding
                 # true_tailor_loss = None
                 # if opt.emb_type != 'pde_const_emb':
                 with torch.no_grad():

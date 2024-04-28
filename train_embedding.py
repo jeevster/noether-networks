@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 import os
+import pickle
 import random
 from torch.utils.data import DataLoader
 import utils
@@ -24,13 +25,14 @@ from models.cn import replace_cn_layers
 from models.svg import SVGModel
 from models.fno_models import FNOEncoder, FNODecoder
 from models.embedding import ConservedEmbedding, ConvConservedEmbedding, TwoDDiffusionReactionEmbedding
-from models.burgers_advection_embeddings import OneDBurgersEmbedding,OneDAdvectionEmbedding
-
+from models.OneD_embeddings import OneDEmbedding
+import matplotlib.pyplot as plt
 import models.lstm as lstm_models
-
-from neuralop.models import FNO, FNO1d
-
+import math
+from neuraloperator.neuralop.models import FNO, FNO1d
+import pdb
 from torchinfo import summary
+from sklearn.metrics import r2_score
 
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
@@ -188,6 +190,10 @@ parser.add_argument('--reload_checkpoint', action='store_true', help='reload lat
 parser.add_argument('--save_checkpoint', action='store_true', help='checkpoint model')
 parser.add_argument('--burgers_emb', action='store_true', help='use burgers embedding')
 parser.add_argument('--advection_emb', action='store_true', help='use advection embedding')
+parser.add_argument('--outer_loss', default='log',type=str, help='use log, mse or rmse loss')
+parser.add_argument('--reload_dir', default='',type=str, help='use log, mse or rmse loss')
+parser.add_argument('--log_param', action='store_true', help='use advection embedding')
+parser.add_argument('--gradient_clipping', action='store_true', help='to do gradient clipping or not')
 # parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
 
 
@@ -212,6 +218,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
+np.random.seed(opt.seed)
 dtype = torch.cuda.FloatTensor
 
 
@@ -324,21 +331,30 @@ if opt.conv_emb:
     print('initialized ConvConservedEmbedding')
 
 elif opt.pde_emb:
-    embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
-                                                in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                                n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials)
-    
-elif opt.burgers_emb:
-    embedding = OneDBurgersEmbedding(in_size=opt.image_width,
-                                    in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                    n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, 
-                                    num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials).to(torch.cuda.current_device())
-elif opt.advection_emb:
-    embedding = OneDAdvectionEmbedding(in_size=opt.image_width,
-                                    in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
-                                    n_layers=opt.fno_layers, data_root=opt.data_root, learned=True, 
-                                    num_learned_parameters = opt.num_learned_parameters, use_partials = opt.use_partials).to(torch.cuda.current_device())
+    if opt.dataset == '1d_advection_multiparam' or opt.dataset == '1d_burgers_multiparam' or opt.dataset == '1d_diffusion_reaction_multiparam':
 
+        embedding = OneDEmbedding(in_size = opt.image_width ,
+                                in_channels =opt.channels, 
+                                n_frames=opt.num_emb_frames, 
+                                hidden_channels=opt.fno_width,
+                                n_layers=opt.fno_layers, 
+                                pde = opt.dataset,
+                                data_root=opt.data_root, learned=True,
+                                num_learned_parameters = opt.num_learned_parameters,
+                                use_partials = opt.use_partials).to(torch.cuda.current_device())
+
+    else:
+        embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
+                                                    in_channels=opt.channels, 
+                                                    n_frames=opt.num_emb_frames, 
+                                                    hidden_channels=opt.fno_width,
+                                                    n_layers=opt.fno_layers, 
+                                                    data_root=opt.data_root, 
+                                                    learned=True, 
+                                                    num_learned_parameters = opt.num_learned_parameters, 
+                                                    use_partials = opt.use_partials).to(torch.cuda.current_device())
+    
+    
 elif opt.pde_const_emb:
     embedding = TwoDDiffusionReactionEmbedding(in_size=opt.image_width,
                                                 in_channels=opt.channels, n_frames=opt.num_emb_frames, hidden_channels=opt.fno_width,
@@ -351,7 +367,7 @@ else:
     print('initialized ConservedEmbedding')
 
 # In the case where we don't do tailoring, we can drop the embedding
-embedding = nn.Identity() if not opt.tailor else embedding
+# embedding = nn.Identity() if not opt.tailor else embedding
 
 # print('emb summary')
 # summary(embedding, input_size=(1, opt.num_emb_frames * opt.channels, opt.image_width, opt.image_width), dtypes=[torch.float64], device=torch.device("cuda"))
@@ -398,6 +414,7 @@ train_nu_losses = []
 train_nu_means = []
 train_nu_vars = []
 train_param_losses = []
+training_gradients = []
 
 val_nu_losses = []
 val_nu_means = []
@@ -406,7 +423,10 @@ val_param_losses = []
 
 val_loss_min_tracker = float("inf")
 
-
+param_collector = []
+pred_param_collector = []
+final_pde_loss_params = []
+final_nu_loss = []
 def save_checkpoint(embedding, log_dir, best = False):
     if best == False:
         torch.save({'model_state': embedding.state_dict()},'%s/ckpt_model.pt' % (log_dir))
@@ -424,10 +444,13 @@ def restore_checkpoint(model, log_dir, device, best = False):
 
 
 
-if opt.reload_checkpoint:
-    restore_checkpoint(embedding, save_dir, torch.device("cuda") , opt.reload_best)
+if opt.reload_dir != '':
+    # restore_checkpoint(embedding, save_dir, torch.device("cuda") , opt.reload_best)
+    checkpoint = torch.load(opt.reload_dir, map_location= torch.device("cuda"))
+    embedding.load_state_dict(checkpoint['model_state'])
 
 import pdb
+pde_residual = []
 for epoch in range(0, opt.n_epochs):
 
     print(f'Epoch {epoch} of {opt.n_epochs}')
@@ -449,25 +472,76 @@ for epoch in range(0, opt.n_epochs):
         with torch.no_grad():
             for batch_num in tqdm(range(opt.num_val_batch)):
                 data, params = next(testing_batch_generator)
-                # pdb.set_trace()
+                
                 # data = data.reshape(-1, data.shape[-2], data.shape[-1])
                 # params = torch.repeat_interleave(params[0],4)
                 # rep = np.repeat([param for param in params],4)
-                # pdb.set_trace()
+                # 
                 params = tuple([param.to(torch.device("cuda")) for param in params])
                 # print("params", params)
-                pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-                print("val_pred_params",pred_params)
-                val_loss += torch.abs(pde_value).log10().mean()
+                # 
+                pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params,opt = opt)
+                if opt.outer_loss == 'log':
+                    val_loss += torch.abs(pde_value + 1e-10).log10().mean()
+                elif opt.outer_loss == 'mse':
+                    val_loss += (pde_value ** 2).mean()
+                elif opt.outer_loss == 'rmse':
+                    val_loss += torch.norm(pde_value.view(pde_value.shape[0],-1), p = 2, dim = 1).mean()
+                # val_loss += torch.abs(pde_value).log10().mean()
                 val_true_loss += torch.abs(true_pde_value).log10().mean()
                 nu_pred = pred_params[0]
-                nu = params[0]
+                if opt.log_param:
+                    nu = params[0]
+                    nu_pred = 10 ** (pred_params[0])
+                else:
+                    nu = params[0]
+                    nu_pred = pred_params[0]
                 nu = nu.to(torch.device("cuda"))
                 val_param_loss += (nu_pred - nu).pow(2).mean()
-                val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
+                val_nu_loss += ((nu_pred - nu).abs() / (nu)).mean()
                 
-            
+                pde_residual.append(torch.abs(true_pde_value).log10().mean().detach().cpu().numpy())
+                if opt.n_epochs - 1 == epoch:
+                    param_collector.extend(nu.tolist())
+                    pred_param_collector.extend(nu_pred.tolist())
+                    final_pde_loss_params.extend(pde_value.tolist())
+                    final_nu_loss.extend(((nu_pred - nu).abs() / nu.abs()).tolist())
             #step scheduler
+            if opt.n_epochs - 1 == epoch:
+                plt.figure()
+                plt.scatter(x = param_collector, y = pred_param_collector)
+                plt.plot([min(param_collector),max(param_collector)],[min(param_collector),max(param_collector)], color = 'black')
+                # plt.xscale('log')
+                plt.title('pred_vs_gt_params')
+                plt.ylabel('pred')
+                plt.xlabel('gt')
+                plt.show()
+                plt.savefig(save_dir + '/pred_vs_gt_params.png')
+
+                plt.figure()
+                plt.scatter(x = param_collector, y = final_pde_loss_params)
+                # plt.xscale('log')
+                plt.title('pde resiudal')
+                plt.show()
+                plt.savefig(save_dir + '/pde_res_loss.png')
+
+                plt.figure()
+                plt.scatter(x = param_collector, y = final_nu_loss)
+                # plt.xscale('log')
+                plt.xlabel('parameter values')
+                plt.ylabel('relative error')
+                plt.yscale('log')
+                if opt.dataset == '1d_advection_multiparam':
+                    plt.title('beta loss')
+                if opt.dataset == '1d_diffusion_reaction_multiparam':
+                    plt.title('rho loss')
+                if opt.dataset == '1d_burgers_multiparam':
+                    plt.title('nu loss')
+                if opt.dataset == '2d_reacdiff_multiparam':
+                    plt.title('k loss')
+                plt.show()
+                plt.savefig(save_dir + '/nu_loss.png')
+
             if opt.param_loss:
                 scheduler.step(val_param_loss)
             else:
@@ -492,7 +566,24 @@ for epoch in range(0, opt.n_epochs):
             val_nu_vars.append(val_nu_var / opt.num_val_batch)
 
             val_param_losses.append(val_param_loss / opt.num_val_batch )
+            if opt.n_epochs - 1 == epoch:
+                
+                os.makedirs(save_dir, exist_ok = True)
+                f = open(f"{save_dir}/losses.txt", "w")
+                pde_residual = [res for res in pde_residual if math.isfinite(res)]
+                # 
+                r2 = r2_score(param_collector, pred_param_collector)
+                f.write(f'val nu loss res mean:{np.mean(val_nu_losses[-1].item()):.3} std:{np.std(val_nu_losses[-1].item()):.3} \n')
+                f.write(f'pde res mean:{np.mean(pde_residual):.3} std:{np.std(pde_residual):.3} \n')
+                f.write(f'r2:{r2}')
+                f.close()
 
+                save_dict = {'val_nu_loss':np.mean(val_nu_losses[-1].item()),
+                            'pde_res_mean':np.mean(pde_residual),
+                            'r2':r2
+                            }
+                with open(f'{save_dir}/saved_dictionary.pkl', 'wb') as f:
+                    pickle.dump(save_dict, f)
 
     print("Val PDE Loss: ", val_loss / opt.num_val_batch)
     embedding.train()
@@ -506,72 +597,104 @@ for epoch in range(0, opt.n_epochs):
     train_nu_mean = 0
 
     train_nu_var = 0
-    
+    training_gradient = 0
 
-    for batch_num in tqdm(range(opt.num_train_batch)):
-        optimizer.zero_grad()
-        data, params = next(training_batch_generator)
-        params = tuple([param.to(torch.device("cuda")) for param in params])
-        pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-        loss = (pde_value).abs().log10().mean()
-        loss = loss.detach() if opt.param_loss else loss
-        true_loss = (true_pde_value).abs().log10().mean()
-        # print("val_pred_params",pred_params)        
-        train_loss  += loss
-        train_true_loss += true_loss
-        nu_pred = pred_params[0]
-        nu = params[0]
-        nu = nu.to(torch.device("cuda"))
-        train_nu_loss += ((nu_pred - nu).abs() / nu).mean()
-        #train to match params
+    if opt.reload_dir == '':
+        for batch_num in tqdm(range(opt.num_train_batch)):
+            optimizer.zero_grad()
+            data, params = next(training_batch_generator)
+            params = tuple([param.to(torch.device("cuda")) for param in params])
+            pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params, opt = opt)
+            if opt.outer_loss == 'log':
+                loss = torch.abs(pde_value + 1e-10).log10().mean()
+            elif opt.outer_loss == 'mse':
+                loss = (pde_value ** 2).mean()
+            elif opt.outer_loss == 'rmse':
+                loss = torch.norm(pde_value.view(pde_value.shape[0],-1), p = 2, dim = 1).mean()
+
+            loss = loss.detach() if opt.param_loss else loss
+            true_loss = (true_pde_value).abs().log10().mean()
+            # print("val_pred_params",pred_params)        
+            train_loss  += loss
+            train_true_loss += true_loss
+            nu_pred = pred_params[0]
+            # nu = params[0] + 1e-10
+            if opt.log_param:
+                nu = params[0]
+                nu_pred = 10 ** (pred_params[0])
+            else:
+                nu = params[0]
+                nu_pred = pred_params[0]
+            nu = nu.to(torch.device("cuda"))
+            train_nu_loss += ((nu_pred - nu).abs() / (nu).abs()).mean()
+            #train to match params
+            
+            param_loss = (nu_pred - nu).pow(2).mean()
+            if opt.param_loss:
+                param_loss.backward()
+            else:
+                loss.backward()
+            #gradient clipping
+            if opt.gradient_clipping:
+                torch.nn.utils.clip_grad_norm_(embedding.parameters(), max_norm = 1)
+
+            training_gradient += torch.norm([p for p in embedding.paramnet.fno_encoder.convs.parameters()][0].grad)
+            optimizer.step()
+            train_param_loss+=param_loss
+
+            train_nu_mean += nu.mean()
+            train_nu_var += nu.var()
+
+            pde_residual.append(torch.abs(true_pde_value).log10().mean().detach().cpu().numpy())
+            if math.isfinite(pde_residual[-1]) == False:
+                # 
+                log_pde = torch.abs(true_pde_value).log10().mean().detach().cpu().numpy()
+                sol_field = data[0].reshape(2,-1).detach().cpu().numpy()
+                plt.figure()
+                plt.plot(sol_field[0])
+                plt.title(f'step=1 {true_pde_value}')
+                plt.show()
+                plt.savefig(save_dir + '/step=1.jpg')
+
+                sol_field = data[0].reshape(2,-1).detach().cpu().numpy()
+                plt.figure()
+                plt.plot(sol_field[1])
+                plt.title(f'step=2 {true_pde_value}')
+                plt.show()
+                plt.savefig(save_dir + '/step=2.jpg')
+
+        if opt.save_checkpoint:
+            save_checkpoint(embedding,save_dir, False)
         
-        param_loss = (nu_pred - nu).pow(2).mean()
-        if opt.param_loss:
-            param_loss.backward()
-        else:
-            loss.backward()
-        #gradient clipping
-        torch.nn.utils.clip_grad_norm_(embedding.parameters(), max_norm = 1)
-        optimizer.step()
-        train_param_loss+=param_loss
-
-        train_nu_mean += nu.mean()
-        train_nu_var += nu.var()
-
-
-    if opt.save_checkpoint:
-        save_checkpoint(embedding,save_dir, False)
-    
-
-    train_losses.append(train_loss / opt.num_train_batch)
-    train_true_losses.append(train_true_loss / opt.num_train_batch)
-    train_nu_losses.append(train_nu_loss / opt.num_train_batch)
-    train_nu_means.append(train_nu_mean / opt.num_train_batch)
-    train_nu_vars.append(train_nu_var / opt.num_train_batch)
-    train_param_losses.append(train_param_loss / opt.num_train_batch)
-    print("Train PDE Loss: ", train_loss / opt.num_train_batch)
-    
-    # #write to tensorboard
-    writer.add_scalar('val_log_pde_loss', val_losses[-1],(epoch + 1))
-    writer.add_scalar('val_log_true_pde_loss', val_true_losses[-1],(epoch + 1))
-    writer.add_scalar('val_nu_loss', val_nu_losses[-1],(epoch + 1))
-    writer.add_scalar('val_param_loss', val_param_losses[-1],(epoch + 1))
+        training_gradients.append(training_gradient / opt.num_train_batch)
+        train_losses.append(train_loss / opt.num_train_batch)
+        train_true_losses.append(train_true_loss / opt.num_train_batch)
+        train_nu_losses.append(train_nu_loss / opt.num_train_batch)
+        train_nu_means.append(train_nu_mean / opt.num_train_batch)
+        train_nu_vars.append(train_nu_var / opt.num_train_batch)
+        train_param_losses.append(train_param_loss / opt.num_train_batch)
+        print("Train PDE Loss: ", train_loss / opt.num_train_batch)
+        
+        # #write to tensorboard
+        writer.add_scalar('val_log_pde_loss', val_losses[-1],(epoch + 1))
+        writer.add_scalar('val_log_true_pde_loss', val_true_losses[-1],(epoch + 1))
+        writer.add_scalar('val_nu_loss', val_nu_losses[-1],(epoch + 1))
+        writer.add_scalar('val_param_loss', val_param_losses[-1],(epoch + 1))
 
 
 
-    writer.add_scalar('val_nu_mean', val_nu_means[-1],(epoch + 1))
-    writer.add_scalar('val_nu_var', val_nu_vars[-1],(epoch + 1))
+        writer.add_scalar('val_nu_mean', val_nu_means[-1],(epoch + 1))
+        writer.add_scalar('val_nu_var', val_nu_vars[-1],(epoch + 1))
 
 
-    writer.add_scalar('train_log_pde_loss', train_losses[-1],(epoch + 1))
-    writer.add_scalar('train_log_true_pde_loss', train_true_losses[-1],(epoch + 1))
-    writer.add_scalar('train_nu_loss', train_nu_losses[-1],(epoch + 1))
-    writer.add_scalar('train_param_loss', train_param_losses[-1],(epoch + 1))
+        writer.add_scalar('train_log_pde_loss', train_losses[-1],(epoch + 1))
+        writer.add_scalar('train_log_true_pde_loss', train_true_losses[-1],(epoch + 1))
+        writer.add_scalar('train_nu_loss', train_nu_losses[-1],(epoch + 1))
+        writer.add_scalar('train_param_loss', train_param_losses[-1],(epoch + 1))
+        writer.add_scalar('training_gradients', training_gradients[-1],(epoch + 1))
 
-
-    writer.add_scalar('train_nu_mean', train_nu_means[-1],(epoch + 1))
-    writer.add_scalar('train_nu_var', train_nu_vars[-1],(epoch + 1))
-
+        writer.add_scalar('train_nu_mean', train_nu_means[-1],(epoch + 1))
+        writer.add_scalar('train_nu_var', train_nu_vars[-1],(epoch + 1))
 
 hyperparameters = {
     'tailor': tailor_str,
@@ -625,4 +748,3 @@ for i in hparams_logging:
 
 writer.flush()
 writer.close()
-

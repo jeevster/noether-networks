@@ -51,10 +51,6 @@ parser.add_argument('--data_root', default='data',
 parser.add_argument('--model_path', default='', help='path to model')
 parser.add_argument('--log_dir', default='',
                     help='directory to save generations to')
-parser.add_argument('--restore_path', default='',
-                    help='directory to reload checkpoints from')
-parser.add_argument('--restore_epoch', type=int, default=0,
-                    help='epoch to reload training from')
 parser.add_argument('--seed', default=1, type=int, help='manual seed')
 parser.add_argument('--n_past', type=int, default=2,
                     help='number of frames to condition on')
@@ -204,6 +200,9 @@ parser.add_argument('--reload_best_svg', action='store_true',
 parser.add_argument('--num_param_combinations', type=int,default=-1)
 parser.add_argument('--fixed_ic', action='store_true')
 parser.add_argument('--fixed_window', action='store_true')
+
+parser.add_argument('--frozen_pinn_loss', action = 'store_true',
+                    help='to use frozen pretrained embedding in outer PINSS loss')
 parser.add_argument('--learned_pinn_loss', action = 'store_true',
                     help='to use learnable embedding in outer PINSS loss')
 parser.add_argument('--no_data_loss',action = 'store_true',
@@ -236,6 +235,27 @@ parser.add_argument('--mean_reduction', action = 'store_true',
                     help = 'take mean of inner losses')
 parser.add_argument('--relative_data_loss', action = 'store_true',
                     help = 'take relative data loss for optimization')
+parser.add_argument('--both_embeddings', action = 'store_true',
+                    help = 'take relative data loss for optimization')
+parser.add_argument('--frozen_train_emb', action = 'store_true',
+                    help = 'take relative data loss for optimization')
+parser.add_argument('--frozen_val_emb', action = 'store_true',
+                    help = 'take relative data loss for optimization')
+parser.add_argument('--emmbedding_residual_loss', action = 'store_true',
+                    help = 'take embedding residual loss')
+parser.add_argument('--emmbedding_param_loss', action = 'store_true',
+                    help = 'take embedding residual loss')
+parser.add_argument('--use_init_frames_for_params', action = 'store_true',
+                    help = 'take initial frames only to comput parameters for the embedding')
+parser.add_argument('--GLU', action = 'store_true',
+                    help = 'use the GLU activate with conditioning')
+parser.add_argument('--GLU_conv', action = 'store_true',
+                    help = 'use the GLU with convolution activate with conditioning')
+parser.add_argument('--single_field', action = 'store_true',
+                    help = 'add parameter field only once')
+parser.add_argument('--param_scale_shift_conditioning', action='store_true',
+                    help = 'conditioning using scale and shift')
+
 # print("torch.cuda.current_device()",torch.cuda.current_device())
 # device = torch.device('cuda')
 # opt = parser.parse_args()
@@ -439,7 +459,7 @@ def main(rank: int, opt, world_size):
     # entire meta-training loop
 
     for trial_num in range(opt.num_trials):
-        start_epoch = opt.restore_epoch
+        start_epoch = 0#opt.restore_epoch
 
         # import pdb
 
@@ -449,13 +469,35 @@ def main(rank: int, opt, world_size):
             opt.a_dim = 0 if not opt.use_action else opt.a_dim
             # dynamics model
             if opt.dataset in  set(['1d_burgers_multiparam','1d_advection_multiparam','1d_diffusion_reaction_multiparam']):
-                extra_param_channel = 1
+                extra_param_channel = 0
+                
+                if opt.conditioning and opt.dataset in  set(['1d_burgers_multiparam','1d_advection_multiparam']):
+                    extra_param_channel = 1 * opt.n_past if opt.single_field == False else 1
                 if opt.conditioning and opt.dataset == '1d_diffusion_reaction_multiparam':
-                    extra_param_channel = 2
+                    extra_param_channel = 2 * opt.n_past if opt.single_field == False else 2
+                
+                in_channels = (opt.channels * opt.n_past) + extra_param_channel
 
                 frame_predictor = CNFNO1d(n_modes_height=opt.fno_modes, 
                                         hidden_channels=opt.fno_width,
-                                        in_channels=(opt.channels + extra_param_channel) * opt.n_past if opt.conditioning else (opt.channels)*opt.n_past, 
+                                        in_channels=in_channels,
+                                        out_channels=opt.channels, 
+                                        n_layers=opt.fno_layers,
+                                        norm = opt.norm if opt.norm != '' else None,
+                                        #### CN Layer Parameters ####
+                                        val_batch_size = opt.val_batch_size,
+                                        train_batch_size = opt.train_batch_size,
+                                        use_cn = opt.use_cn,
+                                        param_scale_shift_conditioning = 0 if opt.param_scale_shift_conditioning == False else extra_param_channel)
+
+                if opt.add_general_learnable == True:
+                # print("h1")
+                    class inner_learnable(nn.Module):
+                        def __init__(self):
+                            super().__init__()
+                            self.fno = CNFNO1d(n_modes_height=opt.fno_modes, 
+                                        hidden_channels=opt.fno_width,
+                                        in_channels=(opt.channels + 0) * opt.n_past if opt.conditioning else (opt.channels)*opt.n_past, 
                                         out_channels=opt.channels, 
                                         n_layers=opt.fno_layers,
                                         norm = opt.norm if opt.norm != '' else None,
@@ -463,14 +505,6 @@ def main(rank: int, opt, world_size):
                                         val_batch_size = opt.val_batch_size,
                                         train_batch_size = opt.train_batch_size,
                                         use_cn = opt.use_cn)
-
-                if opt.add_general_learnable == True:
-                # print("h1")
-                    class inner_learnable(nn.Module):
-                        def __init__(self):
-                            super().__init__()
-                            self.fno = FNO1d(n_modes_height=opt.fno_modes, hidden_channels=opt.fno_width,
-                    in_channels=opt.channels*opt.n_past, out_channels=opt.channels, n_layers=opt.fno_layers).to(torch.cuda.current_device())
                             self.inner = nn.Linear(1024,1)
                         def forward(self, x):
                             return self.inner(self.fno(x))
@@ -482,10 +516,21 @@ def main(rank: int, opt, world_size):
             # frame_predictor = lstm_models.lstm(opt.g_dim+opt.z_dim+opt.a_dim, opt.g_dim, opt.rnn_size, opt.predictor_rnn_layers, opt.batch_size)
             else:
                 print("2d fno")
-                frame_predictor = CNFNO(n_modes=(opt.fno_modes, opt.fno_modes), hidden_channels=opt.fno_width,
-                                    in_channels=opt.channels*opt.n_past, out_channels=opt.channels, n_layers=opt.fno_layers,val_batch_size = opt.val_batch_size,
+                extra_param_channel = 0
+                if opt.conditioning and opt.dataset:
+                    extra_param_channel = 3 * opt.n_past if opt.single_field == False else 3
+                
+                in_channels = (opt.channels * opt.n_past) + extra_param_channel
+                frame_predictor = CNFNO(n_modes=(opt.fno_modes, opt.fno_modes), 
+                                        hidden_channels=opt.fno_width,
+                                        in_channels=in_channels,
+                                        out_channels=opt.channels, 
+                                        n_layers=opt.fno_layers,
+                                        val_batch_size = opt.val_batch_size,
                                         train_batch_size = opt.train_batch_size,
-                                        use_cn = opt.use_cn,norm = opt.norm if opt.norm != '' else None,)
+                                        use_cn = opt.use_cn,
+                                        norm = opt.norm if opt.norm != '' else None,
+                                        param_scale_shift_conditioning = 0 if opt.param_scale_shift_conditioning == False else extra_param_channel)
 
                 if opt.add_general_learnable == True:
                     # print("h1")
@@ -614,7 +659,7 @@ def main(rank: int, opt, world_size):
 
             # complete model
             svg_model = SVGModel(encoder, frame_predictor,
-                                decoder, prior, posterior, outer_embedding if opt.use_embedding else embedding, true_pde_embedding).to(f'cuda:{rank}')
+                                decoder, prior, posterior, outer_embedding if opt.use_embedding else embedding, true_pde_embedding).to(rank)
             svg_model.apply(lambda t: t.cuda(rank))
             
             svg_model = DDP(svg_model, device_ids = [rank])
@@ -663,9 +708,12 @@ def main(rank: int, opt, world_size):
             svg_model = utils.batch_norm_to_group_norm(svg_model)
 
         #load pretrained embedding model
-        if opt.warmstart_emb_path != '' and opt.tailor and opt.emb_type != "pde_const_emb":
+        if opt.reload_latest == False and opt.warmstart_emb_path != '' and opt.tailor and opt.emb_type != "pde_const_emb":
             emb_ckpt = torch.load(opt.warmstart_emb_path)
             svg_model.module.emb.load_state_dict(emb_ckpt['model_state'])
+            if (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
+                svg_model.module.frozen_emb = copy.deepcopy(svg_model.module.emb)
+                svg_model.module.frozen_emb.load_state_dict(emb_ckpt['model_state'])
 
         # svg_model.module.apply(lambda t: t.cuda())
         # print('Eval summary')
@@ -842,333 +890,334 @@ def main(rank: int, opt, world_size):
             val_batch_params = []
             val_batch_sols = []
             # validation
-            if epoch % opt.num_epochs_per_val == 0:
-                print(f'Validation {epoch} Epoch')
-                val_outer_loss = 0.
-                val_relative_loss = 0.
-                val_outer_optimizing_loss = 0.
-                baseline_outer_loss = 0.
+            # if epoch % opt.num_epochs_per_val == 0:
+            #     print(f'Validation {epoch} Epoch')
+            #     val_outer_loss = 0.
+            #     val_relative_loss = 0.
+            #     val_outer_optimizing_loss = 0.
+            #     baseline_outer_loss = 0.
 
-                svg_model.module.eval()
+            #     svg_model.module.eval()
                 
-                val_cn_diffs = [[],[],[]]
-                val_normal_diffs = [[],[],[]]
+            #     val_cn_diffs = [[],[],[]]
+            #     val_normal_diffs = [[],[],[]]
 
-                for batch_num in tqdm(range(opt.num_val_batch)):
-                    batch, params = next(testing_batch_generator)
-                    params = tuple([param for param in params])
+            #     for batch_num in tqdm(range(opt.num_val_batch)):
+            #         batch, params = next(testing_batch_generator)
+            #         params = tuple([param for param in params])
 
-                    with torch.no_grad():
-                        # we optionally evaluate a baseline (untailored) model for comparison
-                        prior_epses = []
-                        posterior_epses = []
+            #         with torch.no_grad():
+            #             # we optionally evaluate a baseline (untailored) model for comparison
+            #             prior_epses = []
+            #             posterior_epses = []
 
-                        # Don't do this
-                        if opt.baseline:
-                            base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
-                                predict_many_steps(baseline_svg_model, 
-                                                batch, opt, 
-                                                mode='eval',
-                                                prior_epses=prior_epses, 
-                                                posterior_epses=posterior_epses, 
-                                                learnable_model = learnable_model)
-                            base_outer_mse_loss, base_outer_pde_loss,_,_ = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
-                                                    base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
-                            base_outer_mse_loss = base_outer_mse_loss.mean()
-                            base_outer_pde_loss = base_outer_pde_loss.mean()
-                            base_outer_loss = base_outer_mse_loss + base_outer_pde_loss
-                    # tailoring pass
-                    val_cached_cn = [None]  # cached cn params
-                    val_batch_inner_losses = []
-                    val_batch_true_inner_losses = []
+            #             # Don't do this
+            #             if opt.baseline:
+            #                 base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
+            #                     predict_many_steps(baseline_svg_model, 
+            #                                     batch, opt, 
+            #                                     mode='eval',
+            #                                     prior_epses=prior_epses, 
+            #                                     posterior_epses=posterior_epses, 
+            #                                     learnable_model = learnable_model)
+            #                 base_outer_mse_loss, base_outer_pde_loss,_,_ = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
+            #                                         base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
+            #                 base_outer_mse_loss = base_outer_mse_loss.mean()
+            #                 base_outer_pde_loss = base_outer_pde_loss.mean()
+            #                 base_outer_loss = base_outer_mse_loss + base_outer_pde_loss
+            #         # tailoring pass
+            #         val_cached_cn = [None]  # cached cn params
+            #         val_batch_inner_losses = []
+            #         val_batch_true_inner_losses = []
 
-                    val_batch_abs_inner_losses = []
-                    val_batch_true_abs_inner_losses = []
+            #         val_batch_abs_inner_losses = []
+            #         val_batch_true_abs_inner_losses = []
 
-                    val_batch_svg_losses = []
+            #         val_batch_svg_losses = []
                     
-                    val_batch_inner_param_losses = []
-                    val_batch_true_inner_param_losses = []
+            #         val_batch_inner_param_losses = []
+            #         val_batch_true_inner_param_losses = []
                     
-                    val_batch_inner_gain = []
-                    val_batch_true_inner_gain = []
+            #         val_batch_inner_gain = []
+            #         val_batch_true_inner_gain = []
                     
-                    val_batch_abs_inner_gain = []
-                    val_batch_true_abs_inner_gain = []
+            #         val_batch_abs_inner_gain = []
+            #         val_batch_true_abs_inner_gain = []
                     
-                    val_batch_data_gain = []
+            #         val_batch_data_gain = []
                     
-                    val_loss = 0
-                    val_true_loss = 0
-                    val_nu_loss = 0
-                    val_param_loss = 0
-                    val_nu_mean =  0
-                    val_nu_var =  0
-                    val_rho_loss = 0
+            #         val_loss = 0
+            #         val_true_loss = 0
+            #         val_nu_loss = 0
+            #         val_param_loss = 0
+            #         val_nu_mean =  0
+            #         val_nu_var =  0
+            #         val_rho_loss = 0
 
 
-                    for batch_step in range(opt.num_jump_steps + 1):
-                        # jump steps are effectively inner steps that have a single higher innerloop_ctx per
-                        # iteration, which allows for many inner steps during training without running
-                        # into memory issues due to storing the whole dynamic computational graph
-                        # associated with unrolling the sequence in the inner loop for many steps
-                        # perform tailoring (autoregressive prediction, tailoring, predict again)
-                        # len
-                        # batch, params = next(testing_batch_generator)
-                        # params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
-                        # batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
-                        # batch -> length npast + nfut [(16,1,1024,1)]
-                        # [].append(a) ->
-                        batch_norm_sum = 0
-                        for data in batch:
-                            batch_norm_sum += torch.sum(torch.norm(data,dim = (2,3))[:,0])
-                        batch_norm_avg = batch_norm_sum / (len(batch) * opt.batch_size)
-                        val_batch_sols.append(batch_norm_avg)
-                        val_batch_params.extend([torch.norm(param) / opt.batch_size for param in params])
+            #         for batch_step in range(opt.num_jump_steps + 1):
+            #             # jump steps are effectively inner steps that have a single higher innerloop_ctx per
+            #             # iteration, which allows for many inner steps during training without running
+            #             # into memory issues due to storing the whole dynamic computational graph
+            #             # associated with unrolling the sequence in the inner loop for many steps
+            #             # perform tailoring (autoregressive prediction, tailoring, predict again)
+            #             # len
+            #             # batch, params = next(testing_batch_generator)
+            #             # params = tuple([param.to(torch.device("cuda")).to(torch.float64) for param in params])
+            #             # batch = [data.to(torch.device("cuda")).to(torch.float64) for data in batch]
+            #             # batch -> length npast + nfut [(16,1,1024,1)]
+            #             # [].append(a) ->
+            #             batch_norm_sum = 0
+            #             for data in batch:
+            #                 batch_norm_sum += torch.sum(torch.norm(data,dim = (2,3))[:,0])
+            #             batch_norm_avg = batch_norm_sum / (len(batch) * opt.batch_size)
+            #             val_batch_sols.append(batch_norm_avg)
+            #             val_batch_params.extend([torch.norm(param) / opt.batch_size for param in params])
                         
-                        if opt.use_embedding:
-                            stacked_batch = torch.stack(batch[:opt.num_emb_frames], dim =1)
-                            pde_value, true_pde_value, pred_params = outer_embedding(stacked_batch, return_params = True, true_params = params)
-                            # print("(true_pde_value == 0).sum()",(true_pde_value == 0).sum())
-                            val_loss += (pde_value ** 2).mean()
-                            val_true_loss += torch.abs(true_pde_value + 1e-10).log10().mean()
-                            nu_pred = pred_params[0]
-                            nu = params[0]
-                            nu = nu.to(torch.device("cuda"))
-                            val_param_loss += (nu_pred - nu).pow(2).mean() #+ (rho_pred - rho).pow(2).mean()
-                            val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
+            #             if opt.use_embedding:
+            #                 stacked_batch = torch.stack(batch[:opt.num_emb_frames], dim =1)
+            #                 pde_value, true_pde_value, pred_params = outer_embedding(stacked_batch, return_params = True, true_params = params)
+            #                 # print("(true_pde_value == 0).sum()",(true_pde_value == 0).sum())
+            #                 val_loss += (pde_value ** 2).mean()
+            #                 val_true_loss += torch.abs(true_pde_value + 1e-10).log10().mean()
+            #                 nu_pred = pred_params[0]
+            #                 nu = params[0]
+            #                 nu = nu.to(torch.device("cuda"))
+            #                 val_param_loss += (nu_pred - nu).pow(2).mean() #+ (rho_pred - rho).pow(2).mean()
+            #                 val_nu_loss += ((nu_pred - nu).abs() / nu).mean()
 
-                            if opt.param_loss:
-                                val_embedding_loss = val_param_loss
-                            else:
-                                val_embedding_loss = val_loss
-                        if opt.conditioning:
-                            if opt.use_true_params_val:
-                                phi_hat = torch.tile(params[0][:,None,None,None], dims = (1,1,1024,1))#.to(torch.cuda.current_device())#.to(torch.float64)
-                                if opt.dataset == '1d_diffusion_reaction_multiparam':
-                                    phi_hat = torch.tile(torch.stack(params, dim = 1).unsqueeze(-1).unsqueeze(-1), dims = (1,1,1024,1))
-                            else:
-                                phi_hat = torch.tile(pred_params[0][:,None,None,None], dims = (1,1,1024,1))#.to(torch.cuda.current_device())#.to(torch.float64)
-                                if opt.dataset == '1d_diffusion_reaction_multiparam':
-                                    phi_hat = torch.tile(torch.stack(tuple(pred_params[0], params[1]), dim = 1).unsqueeze(-1).unsqueeze(-1), dims = (1,1,1024,1))
+            #                 if opt.param_loss:
+            #                     val_embedding_loss = val_param_loss
+            #                 else:
+            #                     val_embedding_loss = val_loss
+            #             if opt.conditioning:
+            #                 if opt.use_true_params_val:
+            #                     phi_hat = torch.tile(params[0][:,None,None,None], dims = (1,1,1024,1))#.to(torch.cuda.current_device())#.to(torch.float64)
+            #                     if opt.dataset == '1d_diffusion_reaction_multiparam':
+            #                         phi_hat = torch.tile(torch.stack(params, dim = 1).unsqueeze(-1).unsqueeze(-1), dims = (1,1,1024,1))
+            #                 else:
+            #                     phi_hat = torch.tile(pred_params[0][:,None,None,None], dims = (1,1,1024,1))#.to(torch.cuda.current_device())#.to(torch.float64)
+            #                     if opt.dataset == '1d_diffusion_reaction_multiparam':
+            #                         phi_hat = torch.tile(torch.stack(tuple(pred_params[0], params[1]), dim = 1).unsqueeze(-1).unsqueeze(-1), dims = (1,1,1024,1))
 
 
-                        # batch = [torch.cat((data, phi_hat), axis = 1) for data in batch]
-                        if opt.cn_demo:
-                            opt.tailor = True
-                        #Tailor many steps uses opt.tailor to decide whether to tailor or not
-                        gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
-                            # no need for higher grads in val
-                            svg_model, [data.to(rank) for data in batch], true_pde_embedding, tuple([param.to(rank) for param in params]), opt=opt, track_higher_grads=False,
-                            mode='eval',learnable_model = learnable_model,
-                            # extra kwargs
-                            tailor_losses=val_batch_inner_losses,
-                            true_tailor_losses = val_batch_true_inner_losses,
-                            tailor_abs_losses=val_batch_abs_inner_losses,
-                            true_tailor_abs_losses = val_batch_true_abs_inner_losses,
-                            param_losses = val_batch_inner_param_losses,
-                            true_param_losses = val_batch_true_inner_param_losses,
-                            inner_gain = val_batch_inner_gain,
-                            true_inner_gain = val_batch_true_inner_gain, 
-                            abs_inner_gain = val_batch_abs_inner_gain,
-                            true_abs_inner_gain = val_batch_true_abs_inner_gain, 
-                            inner_crit_mode=opt.inner_crit_mode,
-                            reuse_lstm_eps=opt.reuse_lstm_eps,
-                            val_inner_lr=val_inner_lr,
-                            svg_losses=val_batch_svg_losses,
-                            only_cn_decoder=opt.only_cn_decoder,
-                            # fstate_dict=val_fstate_dict,
-                            cached_cn=val_cached_cn,
-                            load_cached_cn=(batch_step != 0),
-                            adam_inner_opt = opt.use_adam_inner_opt,
-                            phi_hat = None if opt.conditioning == False else phi_hat.float().to(torch.cuda.current_device()),
-                            cn_norm_tracker = val_cn_diffs,
-                            normal_norm_tracker = val_normal_diffs,
-                            data_gain = val_batch_data_gain,
-                            rank = rank
-                        )
-                        with torch.no_grad():
-                            # compute outer (task) loss
-                            if opt.learned_pinn_loss and opt.pinn_outer_loss:
-                                opt_outer_mse_loss, outer_pde_loss,_, outer_mse_loss, outer_relative_loss,_ = svg_crit(
-                                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
-                            else:
-                                opt_outer_mse_loss, outer_pde_loss,_, outer_mse_loss, outer_relative_loss,_ = svg_crit(
-                                    gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
-                            opt_outer_mse_loss = opt_outer_mse_loss.mean()
-                            outer_relative_loss = outer_relative_loss.mean()
-                            outer_mse_loss = outer_mse_loss.mean()
-                            outer_pde_loss = outer_pde_loss.mean()
-                            if opt.no_data_loss and opt.pinn_outer_loss:
-                                outer_loss = outer_pde_loss #total data + PDE loss                
-                            else:
-                                outer_loss = opt_outer_mse_loss + outer_pde_loss
+            #             # batch = [torch.cat((data, phi_hat), axis = 1) for data in batch]
+            #             if opt.cn_demo:
+            #                 opt.tailor = True
+            #             #Tailor many steps uses opt.tailor to decide whether to tailor or not
 
-                            total_val_loss = outer_loss if opt.use_embedding == False else val_embedding_loss + outer_loss
+            #             gen_seq, mus, logvars, mu_ps, logvar_ps = tailor_many_steps(
+            #                 # no need for higher grads in val
+            #                 svg_model, [data.to(rank) for data in batch], true_pde_embedding, tuple([param.to(rank) for param in params]), opt=opt, track_higher_grads=False,
+            #                 mode='eval',learnable_model = learnable_model,
+            #                 # extra kwargs
+            #                 tailor_losses=val_batch_inner_losses,
+            #                 true_tailor_losses = val_batch_true_inner_losses,
+            #                 tailor_abs_losses=val_batch_abs_inner_losses,
+            #                 true_tailor_abs_losses = val_batch_true_abs_inner_losses,
+            #                 param_losses = val_batch_inner_param_losses,
+            #                 true_param_losses = val_batch_true_inner_param_losses,
+            #                 inner_gain = val_batch_inner_gain,
+            #                 true_inner_gain = val_batch_true_inner_gain, 
+            #                 abs_inner_gain = val_batch_abs_inner_gain,
+            #                 true_abs_inner_gain = val_batch_true_abs_inner_gain, 
+            #                 inner_crit_mode=opt.inner_crit_mode,
+            #                 reuse_lstm_eps=opt.reuse_lstm_eps,
+            #                 val_inner_lr=val_inner_lr,
+            #                 svg_losses=val_batch_svg_losses,
+            #                 only_cn_decoder=opt.only_cn_decoder,
+            #                 # fstate_dict=val_fstate_dict,
+            #                 cached_cn=val_cached_cn,
+            #                 load_cached_cn=(batch_step != 0),
+            #                 adam_inner_opt = opt.use_adam_inner_opt,
+            #                 phi_hat = None if opt.conditioning == False else phi_hat.float().to(torch.cuda.current_device()),
+            #                 cn_norm_tracker = val_cn_diffs,
+            #                 normal_norm_tracker = val_normal_diffs,
+            #                 data_gain = val_batch_data_gain,
+            #                 rank = rank
+            #             )
+            #             with torch.no_grad():
+            #                 # compute outer (task) loss
+            #                 if opt.learned_pinn_loss and opt.pinn_outer_loss:
+            #                     opt_outer_mse_loss, outer_pde_loss,_, outer_mse_loss, outer_relative_loss,_ = svg_crit(
+            #                         gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
+            #                 else:
+            #                     opt_outer_mse_loss, outer_pde_loss,_, outer_mse_loss, outer_relative_loss,_ = svg_crit(
+            #                         gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
+            #                 opt_outer_mse_loss = opt_outer_mse_loss.mean()
+            #                 outer_relative_loss = outer_relative_loss.mean()
+            #                 outer_mse_loss = outer_mse_loss.mean()
+            #                 outer_pde_loss = outer_pde_loss.mean()
+            #                 if opt.no_data_loss and opt.pinn_outer_loss:
+            #                     outer_loss = outer_pde_loss #total data + PDE loss                
+            #                 else:
+            #                     outer_loss = opt_outer_mse_loss + outer_pde_loss
 
-                        val_relative_loss += outer_relative_loss.detach().cpu().item()
-                        val_outer_loss += outer_mse_loss.detach().cpu().item() #only log the data loss
-                        val_outer_optimizing_loss += total_val_loss.detach().cpu().item()
-                        if opt.baseline:
-                            baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
+            #                 total_val_loss = outer_loss if opt.use_embedding == False else val_embedding_loss + outer_loss
+
+            #             val_relative_loss += outer_relative_loss.detach().cpu().item()
+            #             val_outer_loss += outer_mse_loss.detach().cpu().item() #only log the data loss
+            #             val_outer_optimizing_loss += total_val_loss.detach().cpu().item()
+            #             if opt.baseline:
+            #                 baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
                     
-                    #SR: want to log inner losses for all tailoring steps, not just the first step
-                    val_batch_inner_losses = val_batch_inner_losses[0]
-                    val_batch_abs_inner_losses = val_batch_abs_inner_losses[0]
-                    val_batch_inner_param_losses = val_batch_inner_param_losses[0]
-                    val_batch_svg_losses = val_batch_svg_losses[0]
-                    val_batch_inner_gain = val_batch_inner_gain[0]
-                    val_batch_abs_inner_gain = val_batch_abs_inner_gain[0]
-                    val_batch_data_gain = val_batch_data_gain[0]
-                    if len(val_batch_true_inner_losses) !=0:
-                        val_batch_true_inner_losses = val_batch_true_inner_losses[0]
-                        val_batch_true_inner_param_losses = val_batch_true_inner_param_losses[0]
-                        val_batch_true_inner_gain = val_batch_true_inner_gain[0] 
-                        val_batch_true_abs_inner_losses = val_batch_true_abs_inner_losses[0]
-                        val_batch_true_abs_inner_gain = val_batch_true_abs_inner_gain[0] 
+            #         #SR: want to log inner losses for all tailoring steps, not just the first step
+            #         val_batch_inner_losses = val_batch_inner_losses[0]
+            #         val_batch_abs_inner_losses = val_batch_abs_inner_losses[0]
+            #         val_batch_inner_param_losses = val_batch_inner_param_losses[0]
+            #         val_batch_svg_losses = val_batch_svg_losses[0]
+            #         val_batch_inner_gain = val_batch_inner_gain[0]
+            #         val_batch_abs_inner_gain = val_batch_abs_inner_gain[0]
+            #         val_batch_data_gain = val_batch_data_gain[0]
+            #         if len(val_batch_true_inner_losses) !=0:
+            #             val_batch_true_inner_losses = val_batch_true_inner_losses[0]
+            #             val_batch_true_inner_param_losses = val_batch_true_inner_param_losses[0]
+            #             val_batch_true_inner_gain = val_batch_true_inner_gain[0] 
+            #             val_batch_true_abs_inner_losses = val_batch_true_abs_inner_losses[0]
+            #             val_batch_true_abs_inner_gain = val_batch_true_abs_inner_gain[0] 
 
-                    # Should be zero when opt.tailor is False
-                    if len(val_batch_true_inner_losses) !=0:
-                        epoch_val_true_inner_losses.append(val_batch_true_inner_losses)
-                        epoch_val_true_abs_inner_losses.append(val_batch_true_abs_inner_losses)
-                        epoch_val_true_param_losses.append(val_batch_true_inner_param_losses)
-                        epoch_val_true_inner_gain.append(val_batch_true_inner_gain)
-                        epoch_val_true_abs_inner_gain.append(val_batch_true_abs_inner_gain)
-                    epoch_val_inner_losses.append(val_batch_inner_losses)
-                    epoch_val_abs_inner_losses.append(val_batch_abs_inner_losses)
-                    epoch_val_param_losses.append(val_batch_inner_param_losses)
-                    epoch_val_inner_gain.append(val_batch_inner_gain)
-                    epoch_val_abs_inner_gain.append(val_batch_abs_inner_gain)
-                    epoch_val_svg_losses.append(val_batch_svg_losses)
-                    epoch_val_data_gain.append(val_batch_data_gain)
+            #         # Should be zero when opt.tailor is False
+            #         if len(val_batch_true_inner_losses) !=0:
+            #             epoch_val_true_inner_losses.append(val_batch_true_inner_losses)
+            #             epoch_val_true_abs_inner_losses.append(val_batch_true_abs_inner_losses)
+            #             epoch_val_true_param_losses.append(val_batch_true_inner_param_losses)
+            #             epoch_val_true_inner_gain.append(val_batch_true_inner_gain)
+            #             epoch_val_true_abs_inner_gain.append(val_batch_true_abs_inner_gain)
+            #         epoch_val_inner_losses.append(val_batch_inner_losses)
+            #         epoch_val_abs_inner_losses.append(val_batch_abs_inner_losses)
+            #         epoch_val_param_losses.append(val_batch_inner_param_losses)
+            #         epoch_val_inner_gain.append(val_batch_inner_gain)
+            #         epoch_val_abs_inner_gain.append(val_batch_abs_inner_gain)
+            #         epoch_val_svg_losses.append(val_batch_svg_losses)
+            #         epoch_val_data_gain.append(val_batch_data_gain)
 
-                if len(val_batch_true_inner_losses) !=0:
-                    val_true_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_true_inner_losses)])
-                    val_true_param_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_true_param_losses)])
-                    val_true_inner_gain.append(sum(epoch_val_true_inner_gain) / (opt.num_val_batch))
-                    val_true_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_true_abs_inner_losses)])
-                    val_true_abs_inner_gain.append(sum(epoch_val_true_abs_inner_gain) / (opt.num_val_batch))
+            #     if len(val_batch_true_inner_losses) !=0:
+            #         val_true_inner_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_true_inner_losses)])
+            #         val_true_param_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_true_param_losses)])
+            #         val_true_inner_gain.append(sum(epoch_val_true_inner_gain) / (opt.num_val_batch))
+            #         val_true_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_true_abs_inner_losses)])
+            #         val_true_abs_inner_gain.append(sum(epoch_val_true_abs_inner_gain) / (opt.num_val_batch))
 
-                val_inner_gain.append(sum(epoch_val_inner_gain) / (opt.num_val_batch))
-                val_abs_inner_gain.append(sum(epoch_val_abs_inner_gain) / (opt.num_val_batch))
+            #     val_inner_gain.append(sum(epoch_val_inner_gain) / (opt.num_val_batch))
+            #     val_abs_inner_gain.append(sum(epoch_val_abs_inner_gain) / (opt.num_val_batch))
 
-                val_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_inner_losses)])
-                val_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_abs_inner_losses)])
+            #     val_inner_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_inner_losses)])
+            #     val_abs_inner_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_abs_inner_losses)])
 
-                val_param_losses.append([sum(x) / (opt.num_val_batch)
-                                        for x in zip(*epoch_val_param_losses)])
+            #     val_param_losses.append([sum(x) / (opt.num_val_batch)
+            #                             for x in zip(*epoch_val_param_losses)])
 
-                val_svg_losses.append([sum(x) / (opt.num_val_batch)
-                                    for x in zip(*epoch_val_svg_losses)])
-                val_outer_losses.append(val_outer_loss / (opt.num_val_batch))
-                val_relative_losses.append(val_relative_loss / (opt.num_val_batch))
+            #     val_svg_losses.append([sum(x) / (opt.num_val_batch)
+            #                         for x in zip(*epoch_val_svg_losses)])
+            #     val_outer_losses.append(val_outer_loss / (opt.num_val_batch))
+            #     val_relative_losses.append(val_relative_loss / (opt.num_val_batch))
 
-                val_outer_optimizing_losses.append(val_outer_optimizing_loss / (opt.num_val_batch))
-                val_data_gain.append(sum(epoch_val_data_gain) / opt.num_val_batch)
+            #     val_outer_optimizing_losses.append(val_outer_optimizing_loss / (opt.num_val_batch))
+            #     val_data_gain.append(sum(epoch_val_data_gain) / opt.num_val_batch)
 
-                if opt.baseline:
-                    baseline_outer_losses.append(
-                        baseline_outer_loss / (opt.num_val_batch))
+            #     if opt.baseline:
+            #         baseline_outer_losses.append(
+            #             baseline_outer_loss / (opt.num_val_batch))
 
-                writer.add_scalar('Outer Loss/val', val_outer_losses[-1],
-                                (epoch + 1))
-                writer.add_scalar('Outer Relative Loss/val', val_relative_losses[-1],
-                                (epoch + 1))
-                writer.add_scalar('Outer Optimizing Loss/val', val_outer_optimizing_losses[-1],
-                                (epoch + 1))
+            #     writer.add_scalar('Outer Loss/val', val_outer_losses[-1],
+            #                     (epoch + 1))
+            #     writer.add_scalar('Outer Relative Loss/val', val_relative_losses[-1],
+            #                     (epoch + 1))
+            #     writer.add_scalar('Outer Optimizing Loss/val', val_outer_optimizing_losses[-1],
+            #                     (epoch + 1))
 
-                # if opt.use_cn:
-                writer.add_scalar('cn weights norm/val/before', sum(val_cn_diffs[0]), epoch + 1 )
-                writer.add_scalar('cn weights norm/val/after', sum(val_cn_diffs[1]), epoch + 1)
-                writer.add_scalar('cn weights norm/val/diff', sum(val_cn_diffs[2]), epoch + 1)
-                writer.add_scalar('normal weights norm/val/before', sum(val_normal_diffs[0]), epoch + 1)
-                writer.add_scalar('normal weights norm/val/after', sum(val_normal_diffs[1]), epoch + 1)
-                writer.add_scalar('normal weights norm/val/diff', sum(val_normal_diffs[2]), epoch + 1)
-                writer.add_scalar('param norm/val', sum(val_batch_params) / len(val_batch_params), epoch + 1)
-                writer.add_scalar('solution norm/val', sum(val_batch_sols) / len(val_batch_sols), epoch + 1)
+            #     # if opt.use_cn:
+            #     writer.add_scalar('cn weights norm/val/before', sum(val_cn_diffs[0]), epoch + 1 )
+            #     writer.add_scalar('cn weights norm/val/after', sum(val_cn_diffs[1]), epoch + 1)
+            #     writer.add_scalar('cn weights norm/val/diff', sum(val_cn_diffs[2]), epoch + 1)
+            #     writer.add_scalar('normal weights norm/val/before', sum(val_normal_diffs[0]), epoch + 1)
+            #     writer.add_scalar('normal weights norm/val/after', sum(val_normal_diffs[1]), epoch + 1)
+            #     writer.add_scalar('normal weights norm/val/diff', sum(val_normal_diffs[2]), epoch + 1)
+            #     writer.add_scalar('param norm/val', sum(val_batch_params) / len(val_batch_params), epoch + 1)
+            #     writer.add_scalar('solution norm/val', sum(val_batch_sols) / len(val_batch_sols), epoch + 1)
 
-                if opt.baseline:
-                    writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
-                                    (epoch + 1))
-                    if opt.verbose:
-                        print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
-                if opt.tailor:
-                    for step, value in enumerate(val_inner_losses[-1]):
-                        writer.add_scalar(
-                            f'Inner Opt Loss/val/{step} Step', value, (epoch + 1))
-                        writer.add_scalar(
-                            f'Inner Param Loss/val/{step} Step', val_param_losses[-1][step], (epoch + 1))
-                        writer.add_scalar(
-                            f'Log Inner Loss/val/{step} Step', val_abs_inner_losses[-1][step], (epoch + 1))
+            #     if opt.baseline:
+            #         writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
+            #                         (epoch + 1))
+            #         if opt.verbose:
+            #             print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
+            #     if opt.tailor:
+            #         for step, value in enumerate(val_inner_losses[-1]):
+            #             writer.add_scalar(
+            #                 f'Inner Opt Loss/val/{step} Step', value, (epoch + 1))
+            #             writer.add_scalar(
+            #                 f'Inner Param Loss/val/{step} Step', val_param_losses[-1][step], (epoch + 1))
+            #             writer.add_scalar(
+            #                 f'Log Inner Loss/val/{step} Step', val_abs_inner_losses[-1][step], (epoch + 1))
 
-                # if opt.tailor:
-                    writer.add_scalar(
-                        f'Inner Opt Loss Gain/val', val_inner_gain[-1], (epoch + 1))
-                    writer.add_scalar(
-                        f'Abs Inner Loss Gain/val', val_abs_inner_gain[-1], (epoch + 1))
+            #     # if opt.tailor:
+            #         writer.add_scalar(
+            #             f'Inner Opt Loss Gain/val', val_inner_gain[-1], (epoch + 1))
+            #         writer.add_scalar(
+            #             f'Abs Inner Loss Gain/val', val_abs_inner_gain[-1], (epoch + 1))
 
-                #Log true PDE loss
-                try:
-                    for step, value in enumerate(val_true_inner_losses[-1]):
-                        writer.add_scalar(
-                            f'True Inner Opt Loss/val/{step} Step', value, (epoch + 1))
-                        writer.add_scalar(
-                            f'True Log Inner Loss/val/{step} Step', val_true_abs_inner_losses[-1][step], (epoch + 1))
-                        writer.add_scalar(
-                            f'True Inner Param Loss/val/{step} Step', val_true_param_losses[-1][step], (epoch + 1))
-                    writer.add_scalar(
-                        f'Data Loss Gain/val', val_data_gain[-1], (epoch + 1))
-                    writer.add_scalar(
-                            f'True Log Inner Loss/val/Final', val_true_abs_inner_losses[-1][-1], (epoch + 1))
-                    writer.add_scalar(
-                        f'True Inner Opt Loss Gain/val', val_true_inner_gain[-1], (epoch + 1))
-                    writer.add_scalar(
-                        f'True Abs Inner Loss Gain/val', val_true_abs_inner_gain[-1], (epoch + 1))
+            #     #Log true PDE loss
+            #     try:
+            #         for step, value in enumerate(val_true_inner_losses[-1]):
+            #             writer.add_scalar(
+            #                 f'True Inner Opt Loss/val/{step} Step', value, (epoch + 1))
+            #             writer.add_scalar(
+            #                 f'True Log Inner Loss/val/{step} Step', val_true_abs_inner_losses[-1][step], (epoch + 1))
+            #             writer.add_scalar(
+            #                 f'True Inner Param Loss/val/{step} Step', val_true_param_losses[-1][step], (epoch + 1))
+            #         writer.add_scalar(
+            #             f'Data Loss Gain/val', val_data_gain[-1], (epoch + 1))
+            #         writer.add_scalar(
+            #                 f'True Log Inner Loss/val/Final', val_true_abs_inner_losses[-1][-1], (epoch + 1))
+            #         writer.add_scalar(
+            #             f'True Inner Opt Loss Gain/val', val_true_inner_gain[-1], (epoch + 1))
+            #         writer.add_scalar(
+            #             f'True Abs Inner Loss Gain/val', val_true_abs_inner_gain[-1], (epoch + 1))
 
-                except IndexError:
-                    pass
-                if opt.verbose:
-                    print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
-                for step, value in enumerate(val_svg_losses[-1]):
-                    writer.add_scalar(
-                        f'SVG Loss/val/{step} Step', value, (epoch + 1))
-                if opt.verbose:
-                    print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
+            #     except IndexError:
+            #         pass
+            #     if opt.verbose:
+            #         print(f'\tInner VAL loss:   {val_inner_losses[-1]}')
+            #     for step, value in enumerate(val_svg_losses[-1]):
+            #         writer.add_scalar(
+            #             f'SVG Loss/val/{step} Step', value, (epoch + 1))
+            #     if opt.verbose:
+            #         print(f'\tSVG VAL loss:     {val_svg_losses[-1]}')
             
-                val_embedding_losses.append(val_loss / opt.num_val_batch)
-                val_true_embedding_losses.append(val_true_loss / opt.num_val_batch)
-                val_nu_embedding_losses.append(val_nu_loss / opt.num_val_batch)
-                val_nu_means_embedding.append(val_nu_mean / opt.num_val_batch)
-                val_nu_vars_embedding_losses.append(val_nu_var / opt.num_val_batch)
-                val_param_embedding_losses.append(val_param_loss / opt.num_val_batch )
+            #     val_embedding_losses.append(val_loss / opt.num_val_batch)
+            #     val_true_embedding_losses.append(val_true_loss / opt.num_val_batch)
+            #     val_nu_embedding_losses.append(val_nu_loss / opt.num_val_batch)
+            #     val_nu_means_embedding.append(val_nu_mean / opt.num_val_batch)
+            #     val_nu_vars_embedding_losses.append(val_nu_var / opt.num_val_batch)
+            #     val_param_embedding_losses.append(val_param_loss / opt.num_val_batch )
 
-                # #write to tensorboard
-                writer.add_scalar('val_log_pde_loss', val_embedding_losses[-1],(epoch + 1))
-                writer.add_scalar('val_log_true_pde_loss', val_true_embedding_losses[-1],(epoch + 1))
-                writer.add_scalar('val_nu_loss', val_nu_embedding_losses[-1],(epoch + 1))
-                writer.add_scalar('val_param_loss', val_param_embedding_losses[-1],(epoch + 1))
-                writer.add_scalar('val_nu_mean', val_nu_means_embedding[-1],(epoch + 1))
-                writer.add_scalar('val_nu_var', val_nu_vars_embedding_losses[-1],(epoch + 1))
-                writer.flush()
-            #checkpointing best val
-            if opt.save_checkpoint:
-                if opt.ckpt_outer_loss:
-                    if  min_val_outer_loss > val_outer_losses[-1]:
-                        min_val_outer_loss = val_outer_losses[-1]
-                        save_checkpoint(embedding, save_dir, True, False, False)
-                if opt.ckpt_inner_loss:
-                    if  min_val_inner_loss > val_inner_losses[-1][-1]:
-                        min_val_inner_loss = val_inner_losses[-1][-1]
-                        save_checkpoint(embedding, save_dir, False, True, False)        
-                if opt.ckpt_svg_loss:
-                    if  min_val_svg_loss > val_svg_losses[-1][-1]:
-                        min_val_svg_loss = val_svg_losses[-1][-1]
-                        save_checkpoint(embedding, save_dir, False, False, True)    
+            #     # #write to tensorboard
+            #     writer.add_scalar('val_log_pde_loss', val_embedding_losses[-1],(epoch + 1))
+            #     writer.add_scalar('val_log_true_pde_loss', val_true_embedding_losses[-1],(epoch + 1))
+            #     writer.add_scalar('val_nu_loss', val_nu_embedding_losses[-1],(epoch + 1))
+            #     writer.add_scalar('val_param_loss', val_param_embedding_losses[-1],(epoch + 1))
+            #     writer.add_scalar('val_nu_mean', val_nu_means_embedding[-1],(epoch + 1))
+            #     writer.add_scalar('val_nu_var', val_nu_vars_embedding_losses[-1],(epoch + 1))
+            #     writer.flush()
+            # #checkpointing best val
+            # if opt.save_checkpoint:
+            #     if opt.ckpt_outer_loss:
+            #         if  min_val_outer_loss > val_outer_losses[-1]:
+            #             min_val_outer_loss = val_outer_losses[-1]
+            #             save_checkpoint(embedding, save_dir, True, False, False)        
+            #     if opt.ckpt_inner_loss:
+            #         if  min_val_inner_loss > val_inner_losses[-1][-1]:
+            #             min_val_inner_loss = val_inner_losses[-1][-1]
+            #             save_checkpoint(embedding, save_dir, False, True, False)        
+            #     if opt.ckpt_svg_loss:
+            #         if  min_val_svg_loss > val_svg_losses[-1][-1]:
+            #             min_val_svg_loss = val_svg_losses[-1][-1]
+            #             save_checkpoint(embedding, save_dir, False, False, True)        
             # Training
 
             print(f'Train {epoch} Epoch')
@@ -1497,8 +1546,9 @@ def main(rank: int, opt, world_size):
                 writer.add_scalar('Embedding/param norm', emb_norms[-1],
                                 (epoch + 1))
             if opt.learn_inner_lr:
-                writer.add_scalar('Embedding/inner LR scale factor', svg_model.module.inner_lr_scale,
-                                (epoch + 1))
+                writer.add_scalar('Embedding/inner LR scale factor', 
+                                  svg_model.module.inner_lr_scale,
+                                  (epoch + 1))
                 all_inner_lr_scales.append(
                     svg_model.module.inner_lr_scale.detach().cpu().item())
 

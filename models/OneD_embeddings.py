@@ -14,7 +14,7 @@ import pdb
 import h5py
 import numpy as np
 import deepxde as dde
-from neuralop.models import FNO, FNO1d
+from neuraloperator.neuralop.models import FNO, FNO1d
 from os.path import join
 from functools import partial
 from models.nithin_embedding import reaction_diff_2d_residual_compute
@@ -97,7 +97,7 @@ class ConstantLayer(nn.Module):
         super().__init__()
         self.num_constants = len(constants)
         self.const_tensor = torch.Tensor(constants).cuda().double()
-        self.const_tensor.requires_grad = False
+        # self.const_tensor.requires_grad = False
 
     def forward(self, x):
         b_size = x.shape[0]
@@ -112,7 +112,7 @@ class ConstantLayer_MultiParam(nn.Module):
         b_size = x.shape[0]
         num_constants = len(constants)
         const_tensor = torch.cat(constants).view(-1, b_size).T
-        const_tensor.requires_grad = False
+        # const_tensor.requires_grad = False
         return const_tensor
 
 class ParameterNet(nn.Module):
@@ -201,7 +201,9 @@ class OneDEmbedding(torch.nn.Module):
                 self.n_frames = 3 * n_frames #(2 partial derivatives + 1 solution field) =  3
             if self.pde == '1d_burgers_multiparam':
                 self.n_frames = 4 * n_frames
-        
+            if self.pde == '1d_diffusion_reaction_multiparam':
+                self.n_frames = 3 * n_frames
+
         self.data_root = data_root
         self.learned = learned
         # param is either a network or a callable constant
@@ -242,7 +244,7 @@ class OneDEmbedding(torch.nn.Module):
         data_x = data_x.to(torch.float64)
         data_t = data_t.to(torch.float64)
         data_xx = data_xx.to(torch.float64)
-        eqn1 = data_x_usqr + data_t - ((nu/pi) * data_xx)
+        eqn1 = data_x_usqr + data_t - ((nu) * data_xx)
 
         pde_residual = (eqn1.to(torch.float64)).abs().mean(dim = (1,2,3)).to(torch.float64)
         if return_partials:
@@ -251,7 +253,28 @@ class OneDEmbedding(torch.nn.Module):
             return pde_residual, u_partials #keep u and v partials separate
         else:
             return pde_residual
-    
+
+    def reaction_diffusion_1d_residual_compute(self, u, x,t, rho, nu, return_partials = False):
+        rho = rho.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(self.device)
+        nu = nu.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(self.device)
+        
+        data_x, data_x_usqr, data_xx, data_t = self.partials_torch(u, x, t)
+        pi = torch.pi
+        # pi = pi.to(torch.float64)
+        data_x_usqr = data_x_usqr.to(torch.float64)
+        data_x = data_x.to(torch.float64)
+        data_t = data_t.to(torch.float64)
+        data_xx = data_xx.to(torch.float64)
+        eqn1 = data_t - (nu * data_xx) - (rho * u * (1-u))
+
+        pde_residual = (eqn1.to(torch.float64)).abs().mean(dim = (1,2,3)).to(torch.float64)
+        if return_partials:
+            u_partials = torch.cat([data_xx, data_t], dim = 1).to(torch.float64)
+            u_partials = u_partials[:,:,None,:,:].to(torch.float64).to(self.device)
+            return pde_residual, u_partials #keep u and v partials separate
+        else:
+            return pde_residual
+
     def advection_1d_residual_compute(self, u, x,t,nu, return_partials = False):
         nu = nu.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).to(self.device)
         
@@ -270,7 +293,7 @@ class OneDEmbedding(torch.nn.Module):
         else:
             return pde_residual
 
-    def forward(self, solution_field, true_params = None, return_params = False):
+    def forward(self, solution_field, true_params = None, return_params = False, opt = False):
         # solution_field = solution_field.reshape(solution_field.shape[0],
         #                                         int(solution_field.shape[1] /
         #                                             self.in_channels), self.in_channels,
@@ -282,30 +305,54 @@ class OneDEmbedding(torch.nn.Module):
 
         if true_params is not None:
             with torch.no_grad():
-                nu_true = true_params[0]
                 if self.pde == '1d_advection_multiparam' or self.pde == '1d_advection_multiparam_fno_rnn':
+                    nu_true = true_params[0]
                     true_residual, partials = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
                 elif self.pde == '1d_burgers_multiparam':
-                    true_residual, partials = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
+                    nu_true = true_params[0]
+                    true_residual, partials = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu_true, return_partials = True)
+                elif self.pde == '1d_diffusion_reaction_multiparam':
+                    rho_true, nu_true = true_params[0], true_params[1]
+                    true_residual, partials = self.reaction_diffusion_1d_residual_compute(u_stack,self.x, self.dt, rho_true, nu_true, return_partials = True)
 
         input_data = torch.cat([solution_field, partials], dim = 1).to(self.device) if self.use_partials else solution_field ### might need changes here
         input_data = input_data.to(torch.float64)
         # input_data = input_data.double()
-        # pdb.set_trace()
+        pdb.set_trace()
         params = self.paramnet(input_data[:,:,0,:,0]) if self.learned else self.paramnet(input_data[:,:,0,:,0], *true_params)
-        nu = params[:, 0].double()
         # nu = true_params[0]
         if self.pde == '1d_advection_multiparam' or self.pde == '1d_advection_multiparam_fno_rnn':
-            residual = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu)
+            nu = params[:, 0].double()
+            if opt != False and opt.log_param:
+                residual = self.advection_1d_residual_compute(u_stack,self.x, self.dt, 10 ** nu)
+            else:
+                residual = self.advection_1d_residual_compute(u_stack,self.x, self.dt, nu)
+            return_param_vals = [nu]
         elif self.pde == '1d_burgers_multiparam':
-            residual = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu)
-        
-        
+            nu = params[:, 0].double()
+            if opt != False and opt.log_param:
+                residual = self.burgers_1d_residual_compute(u_stack,self.x, self.dt,  10 ** nu)
+            else:
+                residual = self.burgers_1d_residual_compute(u_stack,self.x, self.dt, nu)
+            return_param_vals = [nu]
+        elif self.pde == '1d_diffusion_reaction_multiparam':
+            rho = params[:, 0].double()
+            #set Du and/or Du to their true values if not learnable
+            try:
+                nu = params[:, 1].double() if self.num_learned_parameters > 1 else true_params[1]
+            except:
+                raise RuntimeError("At least one parameter fixed as not learnable, but true value not provided")
+            if opt != False and opt.log_param:
+                residual = self.reaction_diffusion_1d_residual_compute(u_stack,self.x, self.dt, 10 ** rho, nu)        
+            else:
+                residual = self.reaction_diffusion_1d_residual_compute(u_stack,self.x, self.dt, rho, nu)        
+            return_param_vals = [rho, nu]
+
         if return_params:
             if true_params is not None:
-                return residual, true_residual, tuple([nu])
+                return residual, true_residual, tuple(return_param_vals)
             else:
-                return residual, tuple([nu])
+                return residual, tuple(return_param_vals)
         else:
             if true_params is not None:
                 return residual, true_residual

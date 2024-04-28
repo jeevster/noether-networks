@@ -21,6 +21,7 @@ from sklearn.manifold import TSNE
 import scipy.misc
 import matplotlib
 import yaml
+import pdb
 matplotlib.use('agg')
 
 try:
@@ -63,6 +64,8 @@ def svg_kl_crit(mu1, logvar1, mu2, logvar2, opt):
 
 #pde task loss
 def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
+    embs = []
+    param_loss = []
     if opt.num_emb_frames == 1:
         embs = [pde_crit(frame, true_params = true_params)[0] for frame in gen_seq]
     elif opt.num_emb_frames > 1:
@@ -71,20 +74,55 @@ def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
         for i in range(opt.num_emb_frames, len(gen_seq)+1):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1))
-        embs = [pde_crit(frame, true_params = true_params)[0] for frame in stacked_gen_seq]
+        for frame in stacked_gen_seq:
+            pde_value, true_pde_value, pred_params = pde_crit(frame, true_params = true_params, return_params = True)
+            embs.append(pde_value)
+            param_loss.append(pred_params)
         assert(len(embs) == len(gen_seq) - opt.num_emb_frames + 1)  
     else:
         raise ValueError
-    return [emb.mean() for emb in embs]
-
-def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, opt):
+    if opt.outer_loss_choice == 'old' or opt.outer_loss_choice == None or opt.outer_loss_choice == False:
+        minimizing_loss = [emb.mean() for emb in embs]
+    elif opt.outer_loss_choice == 'abs':
+        minimizing_loss = [torch.abs(emb).mean() for emb in embs]
+    elif opt.outer_loss_choice == 'log':
+        minimizing_loss = [torch.abs(emb).log10().mean() for emb in embs]
+    elif opt.outer_loss_choice == 'mse':
+        minimizing_loss = [(emb ** 2).mean() for emb in embs]
+    elif opt.outer_loss_choice == 'l2norm':
+        minimizing_loss = [torch.norm(emb.view(emb.shape[0], -1),2,1).mean() for emb in embs]
+    return minimizing_loss, [torch.abs(emb).mean() for emb in embs], [torch.abs(emb).log10().mean() for emb in embs], param_loss
+def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, opt, plot = False, save_dir = ''):
     # svg_mse_losses = list(svg_mse_crit(gen, gt) for gen, gt in zip(gen_seq[opt.n_past:], gt_seq[opt.n_past:]))
-
+    # 
     # MSE (data) and PDE (PINN) Loss terms for Task loss
-    svg_pde_losses = svg_pde_crit(gen_seq, params, pde_crit, opt)
+    svg_pde_losses, avg_pde_residual, log_pde_residual, param_loss = svg_pde_crit(gen_seq, params, pde_crit, opt)
     svg_mse_losses = list(svg_mse_crit(gen, gt)
                           for gen, gt in zip(gen_seq[1:], gt_seq[1:]))
-    final_mse_loss = torch.stack(svg_mse_losses).sum()
+    data_loss = torch.stack(svg_mse_losses).sum()
+
+    relative_data_losses = [torch.mean(torch.norm(gen.reshape(gen.shape[0], -1) - gt.reshape(gen.shape[0], -1), 2, 1) / torch.norm(gt.reshape(gen.shape[0], -1), 2, 1)) for gen, gt in zip(gen_seq[1:], gt_seq[1:])]
+    relative_data_loss = torch.stack(relative_data_losses).mean()
+
+    if plot:
+        plt.figure()
+        plt.plot(gen_seq[-1][0,0,:,0].detach().cpu().numpy(), label = 'predicted trajectory')
+        plt.plot(gt_seq[-1][0,0,:,0].detach().cpu().numpy(), label = 'ground truth')
+        plt.title('trajectories comparision')
+        plt.legend()
+        plt.show()
+        plt.savefig(f'{save_dir}/trajectory.jpg')
+
+        f = open(f"{save_dir}/trajectory_residuals.txt", "w")
+        integer = avg_pde_residual[-1]
+        f.write(str(integer))
+        f.close()
+        
+    if opt.relative_data_loss == True:
+        final_mse_loss = relative_data_loss
+
+    else:
+        final_mse_loss = data_loss
     final_pde_loss = torch.Tensor([0.])
     if opt.pinn_outer_loss: #include both data and pde loss
         final_pde_loss = opt.pinn_outer_loss_weight*torch.stack(svg_pde_losses).sum()
@@ -93,7 +131,7 @@ def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, 
     # svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p
     #                  in zip(mus, logvars, mu_ps, logvar_ps)]
     # svg_loss += opt.svg_loss_kl_weight * torch.stack(svg_kl_losses).sum()
-    return final_mse_loss, final_pde_loss
+    return final_mse_loss, final_pde_loss, torch.stack(avg_pde_residual).sum(), data_loss, relative_data_loss, torch.stack(log_pde_residual).sum()
 
 
 def load_dataset(opt):
@@ -251,7 +289,8 @@ def load_dataset(opt):
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
-            shuffle=True
+            shuffle=True,
+            ood = opt.ood if hasattr(opt, 'ood') else False
         )
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
@@ -265,6 +304,72 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
+            ood = opt.ood if hasattr(opt, 'ood') else False
+        )
+    elif opt.dataset == '1d_diffusion_reaction_multiparam':
+        
+        from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam
+        frame_step = 1
+        if hasattr(opt, 'frame_step'):
+            frame_step = opt.frame_step
+        train_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=True,
+            pde = 'diffuion_reaction',
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window,
+            shuffle=True
+        )
+        test_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=False,
+            pde = 'diffuion_reaction',
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window,
+            shuffle=True,
+        )
+    elif opt.dataset == '1d_advection_multiparam_fno_rnn':
+        from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam
+        frame_step = 1
+        if hasattr(opt, 'frame_step'):
+            frame_step = opt.frame_step
+        train_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=True,
+            pde = 'advection',
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window,
+            shuffle=True,
+            fno_rnn = True
+        )
+        test_data = OneD_Advection_Burgers_MultiParam(
+            data_root=opt.data_root,
+            train=False,
+            pde = 'advection',
+            image_size=opt.image_width,
+            seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
+            percent_train=0.8,
+            frame_step=frame_step,
+            num_param_combinations=opt.num_param_combinations,
+            fixed_ic = opt.fixed_ic,
+            fixed_window = opt.fixed_window,
+            shuffle=True,
+            fno_rnn = True
         )
     else:
         raise ValueError(
@@ -366,7 +471,7 @@ def make_image(tensor):
     if tensor.size(0) == 1:
         tensor = tensor.expand(3, tensor.size(1), tensor.size(2))
     # import pdb
-    # pdb.set_trace()
+    # 
     return scipy.misc.toimage(tensor.detach().numpy(),
                               high=255*tensor.detach().numpy().max(),
                               channel_axis=0)
@@ -773,17 +878,58 @@ def modernize_model(old_model_path, opt):
 
 def compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, true_pde_embedding, params, opt):
     if opt.learned_pinn_loss and opt.pinn_outer_loss:
-        outer_mse_loss, outer_pde_loss = svg_crit(
+        # final_mse_loss, final_pde_loss, torch.stack(avg_pde_residual).sum(), data_loss, relative_data_loss
+        opt_outer_mse_loss, outer_pde_loss,pde_residual, outer_mse_loss, outer_relative_loss, outer_inner_log_loss = svg_crit(
             gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt)
         
     else:
-        outer_mse_loss, outer_pde_loss = svg_crit(
+        # final_mse_loss, final_pde_loss, torch.stack(avg_pde_residual).sum(), data_loss, relative_data_loss
+        opt_outer_mse_loss, outer_pde_loss,pde_residual, outer_mse_loss, outer_relative_loss, outer_inner_log_loss = svg_crit(
             gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, params, opt)
+        opt_outer_mse_loss = opt_outer_mse_loss.mean()
+        outer_relative_loss = outer_relative_loss.mean()
         outer_mse_loss = outer_mse_loss.mean()
         outer_pde_loss = outer_pde_loss.mean()
     if opt.no_data_loss and opt.pinn_outer_loss:
         outer_loss = outer_pde_loss #total data + PDE loss                
     else:
-        outer_loss = outer_mse_loss + outer_pde_loss
+        outer_loss = opt_outer_mse_loss + outer_pde_loss
     
-    return outer_loss, outer_mse_loss, outer_pde_loss
+    return outer_loss, outer_pde_loss, outer_mse_loss, pde_residual, outer_relative_loss, outer_inner_log_loss
+
+def plot_solution_field(pre_tailor_output, post_tailor_output, ground_truth, opt, params, epoch,save_dir):
+    if '1d' in opt.dataset and epoch % 20 == 0:
+        param = params[0].item()
+        plt.figure()
+        plt.plot(pre_tailor_output[-1].view(-1).detach().cpu().numpy(), label = 'pre_tailor_output')
+        plt.plot(post_tailor_output[-1].view(-1).detach().cpu().numpy(), label = 'post_tailor_output')
+        plt.plot(ground_truth[-1].view(-1).detach().cpu().numpy(), label = 'ground_truth')
+        plt.yscale('log')
+        plt.title(f'param {param} epoch {epoch}')
+        plt.legend()
+        plt.show()
+        plt.savefig(save_dir + f'/param {param} epoch {epoch}.png')
+
+    if '2d' in opt.dataset and epoch % 20 == 0:
+        # 
+        plt.figure()
+        param = params[0].item()
+        plt.imshow(pre_tailor_output[-1][0,0].detach().cpu().numpy(), label = 'pre_tailor_output')
+        plt.title(f'pre_tailor_output param {param} epoch {epoch}')
+        plt.legend()
+        plt.show()
+        plt.savefig(save_dir + f'/pre_tailor_output param {param} epoch {epoch}.png')
+        
+        plt.figure()
+        plt.imshow(post_tailor_output[-1][0,0].detach().cpu().numpy(), label = 'post_tailor_output')
+        plt.title(f'post_tailor_output param {param} epoch {epoch}')
+        plt.legend()
+        plt.show()
+        plt.savefig(save_dir + f'/post_tailor_output param {param} epoch {epoch}.png')
+
+        plt.figure()
+        plt.imshow(ground_truth[-1][0,0].detach().cpu().numpy(), label = 'ground_truth')
+        plt.title(f'ground_truth param {param} epoch {epoch}')
+        plt.legend()
+        plt.show()
+        plt.savefig(save_dir + f'/ground_truth param {param} epoch {epoch}.png')

@@ -1,0 +1,15 @@
+,data,pde_residual,r2
+data_outer_train=learnable_val=learnable_residual_loss,35,38,36
+data_outer_train=learnable_val=frozen_residual_loss,27,25,22
+data_outer_train=learnable_val=frozen,23,24,25
+data_outer_train=learnable_val=frozen_residual_loss_init_frames,6,10,17
+data_outer_train=frozen_val=frozen,22,22,20
+data_outer_train=learnable_val=frozen_init_frames,20,18,16
+data_outer_train=learnable_val=learnable_init_frames,20,22,24
+data_outer_train=frozen_val=frozen_init_frames,10,8,17
+data_outer_train=learnable_val=frozen_param_loss,28,20,7
+data_outer_train=learnable_val=frozen_param_loss_init_frames,3,6,8
+data_outer_train=learnable_val=learnable,31,31,25
+data_outer_train=learnable_val=learnable_param_loss,28,29,9
+data_outer_train=learnable_val=learnable_param_loss_init_frames,7,13,10
+data_outer_train=learnable_val=learnable_residual_loss_init_frames,13,7,37

@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 from neuraloperator.neuralop.models import FNO, FNO1d, CNFNO1d, CNFNO
 import copy
 from torchinfo import summary
-
+import pickle
 # NOTE: deterministic for debugging
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True
@@ -227,6 +227,9 @@ parser.add_argument('--use_adam_inner_opt', action = 'store_true',
 parser.add_argument('--norm', default = '',
                     help ='to use select between instance_norm, layer_norm, batch_norm')
 parser.add_argument('--reload_dir', type=str, help='reload ckpt file path')
+parser.add_argument('--ood', action = 'store_true',
+                    help='ood exp for advection')
+
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
 opt = parser.parse_args()
@@ -250,6 +253,7 @@ print("Random Seed: ", opt.seed)
 random.seed(opt.seed)
 torch.manual_seed(opt.seed)
 torch.cuda.manual_seed_all(opt.seed)
+np.random.seed(opt.seed)
 # dtype = torch.cuda.DoubleTensor
 dtype = torch.cuda.FloatTensor
 
@@ -549,7 +553,7 @@ for trial_num in range(opt.num_trials):
         svg_model.apply(lambda t: t.cuda())
 
         if opt.reload_dir:
-            checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt')
+            checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt') if 'ckpt_model.pt' not in opt.reload_dir else opt.reload_dir
             checkpoint = torch.load(checkpoint_path, map_location= device)
             svg_model.load_state_dict(checkpoint['model_state'])
 
@@ -676,6 +680,8 @@ for trial_num in range(opt.num_trials):
     val_pde_losses = []
     val_mse_losses = []
     val_rel_losses = []
+    val_prediction_collector = []
+    param_collector = []
     val_param_losses = []
     for epoch in range(1):
 
@@ -791,7 +797,7 @@ for trial_num in range(opt.num_trials):
                         gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
                                                                     # no need for higher grads in val
                                                                     svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
-                                                                    mode='eval',learnable_model = learnable_model,
+                                                                    mode='eval',learnable_model = learnable_model,param_collector = param_collector,
                                                                     # extra kwargs
                                                                 )
                         tailor_opt_outer_loss, tailor_outer_pde_loss, tailor_outer_mse_loss,_,_,tailor_log_inner_loss = compute_losses(gen_seq, init_gen_seq, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
@@ -821,6 +827,7 @@ for trial_num in range(opt.num_trials):
                             svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
                             mode='eval',learnable_model = learnable_model,
                         )
+                        val_prediction_collector.append([gen_seq, batch,params[0]])
                         post_opt_outer_loss, post_outer_pde_loss, post_outer_data_loss,post_pde_residual_avg, post_relative_loss, post_log_inner_loss = compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
                         val_inner_loss += post_outer_pde_loss.detach().cpu().item() #only log the data loss
                         val_outer_loss += post_outer_data_loss.detach().cpu().item() #only log the data loss
@@ -833,11 +840,11 @@ for trial_num in range(opt.num_trials):
                                 rel_loss_per_step_tracker[tracker_step] = 0
                             rel_loss_per_step_tracker[tracker_step] += ((loss_per_step_tracker[tracker_step] - pre_outer_data_loss) / pre_outer_data_loss)#.mean().detach().cpu().item()
                             rel_inner_loss_per_step_tracker[tracker_step]+= ((inner_loss_per_step_tracker[tracker_step] - val_pre_inner_loss) / val_pre_inner_loss)#.mean().detach().cpu().item()
-
                         val_loss_diff += ((post_outer_data_loss - pre_outer_data_loss) / pre_outer_data_loss).mean().detach().cpu().item()
                         val_inner_loss_diff += ((post_outer_pde_loss - pre_outer_pde_loss) / pre_outer_pde_loss).mean().detach().cpu().item()
                         val_residual_diff += ((post_pde_residual_avg - pre_pde_residual_avg) / pre_pde_residual_avg).mean().detach().cpu().item()
-                        
+                        # val_prediction_collector.append([gen_seq, batch,params[0]])
+
                         val_mse_losses.append(post_outer_data_loss.detach().cpu().item())
                         val_rel_losses.append(post_relative_loss.detach().cpu().item())
                         val_pde_losses.append(post_log_inner_loss.detach().cpu().item())
@@ -855,14 +862,26 @@ for trial_num in range(opt.num_trials):
             f.write(f'rel mean:{np.mean([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]):.3}+-{np.std([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]):.3} \n')
             f.write(f'pde res mean:{np.mean([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]):.3}+-{np.std([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]):.3} \n')
             f.close()
+            save_dict = {'mse_mean':np.mean([rel_loss for rel_loss in val_mse_losses if math.isfinite(rel_loss)]),
+                        'rel_mean':np.mean([rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]),
+                        'pde_res_mean':np.mean([rel_loss for rel_loss in val_pde_losses if math.isfinite(rel_loss)]),
+                        'param_init_mean':np.mean([rel_loss[-1] for rel_loss in val_param_losses])}
+            with open(f'{save_dir}/saved_dictionary.pkl', 'wb') as f:
+                pickle.dump(save_dict, f)
             if '1d' in opt.dataset:
-                plt.figure()
-                plt.plot(gen_seq[-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-                plt.plot(batch[-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-                plt.xlabel('x-spatial coordinates')
-                plt.legend()
-                plt.show()
-                plt.savefig(f"{save_dir}/pred.jpg")
+            # val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
+                if 'burgers' not in opt.dataset: 
+                    sorted_indices = np.argsort(val_rel_losses)
+                    print(sorted_indices)
+                    for img_idx, sorted_idx in enumerate(sorted_indices):
+                        plt.figure()
+                        plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+                        plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+                        plt.legend()
+                        plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
+                        plt.xlabel('x-spatial coordinates')
+                        plt.show()
+                        plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
             else:
                 var_1_gt = batch[-1][0,0].detach().cpu().numpy()
                 var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()

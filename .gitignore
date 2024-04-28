@@ -3,6 +3,9 @@ results/
 results_noether_summer/
 diffusion-reaction/
 results_summer/
+results_summer_new/
+eval_metrics/
+config_files/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
