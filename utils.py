@@ -74,11 +74,21 @@ def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
         for i in range(opt.num_emb_frames, len(gen_seq)+1):
             stacked_gen_seq.append(
                 torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1))
-        for frame in stacked_gen_seq:
-            pde_value, true_pde_value, pred_params = pde_crit(frame, true_params = true_params, return_params = True)
-            embs.append(pde_value)
-            param_loss.append(pred_params)
-        assert(len(embs) == len(gen_seq) - opt.num_emb_frames + 1)  
+            
+        # [ini-2, nii-1, pred1, pred2]
+        # []
+        
+        #[init1-init2, init2-pred1, pred1-pred2]
+        # (very low, very high, medium?)
+
+        #[(B,1),(B,1),(B,1)]
+        # for frame in stacked_gen_seq:
+        #     pde_value, true_pde_value, pred_params = pde_crit(frame, true_params = true_params, return_params = True)
+        #     embs.append(pde_value)
+        #     param_loss.append(pred_params)
+        pde_value, true_pde_value, pred_params = pde_crit(torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1), true_params = true_params, return_params = True)
+        # assert(len(embs) == len(gen_seq) - opt.num_emb_frames + 1)  
+        embs.append(pde_value)
     else:
         raise ValueError
     if opt.outer_loss_choice == 'old' or opt.outer_loss_choice == None or opt.outer_loss_choice == False:
@@ -119,19 +129,19 @@ def svg_crit(gen_seq, gt_seq, mus, logvars, mu_ps, logvar_ps, pde_crit, params, 
         f.close()
         
     if opt.relative_data_loss == True:
-        final_mse_loss = relative_data_loss
+        final_opt_loss = relative_data_loss
 
     else:
-        final_mse_loss = data_loss
+        final_opt_loss = data_loss
     final_pde_loss = torch.Tensor([0.])
-    if opt.pinn_outer_loss: #include both data and pde loss
+    if opt.pinn_outer_loss: #include both data and pde loss   [0]
         final_pde_loss = opt.pinn_outer_loss_weight*torch.stack(svg_pde_losses).sum()
     
     # TODO: investigate effect of KL term on tailoring
     # svg_kl_losses = [svg_kl_crit(mu, logvar, mu_p, logvar_p, opt) for mu, logvar, mu_p, logvar_p
     #                  in zip(mus, logvars, mu_ps, logvar_ps)]
     # svg_loss += opt.svg_loss_kl_weight * torch.stack(svg_kl_losses).sum()
-    return final_mse_loss, final_pde_loss, torch.stack(avg_pde_residual).sum(), data_loss, relative_data_loss, torch.stack(log_pde_residual).sum()
+    return final_opt_loss, final_pde_loss, torch.stack(avg_pde_residual).sum(), data_loss, relative_data_loss, torch.stack(log_pde_residual).sum()
 
 
 def load_dataset(opt):
@@ -258,7 +268,9 @@ def load_dataset(opt):
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
-            fixed_window = opt.fixed_window
+            fixed_window = opt.fixed_window,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
@@ -271,7 +283,9 @@ def load_dataset(opt):
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
-            fixed_window = opt.fixed_window
+            fixed_window = opt.fixed_window,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
     elif opt.dataset == '1d_advection_multiparam':
         from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam
@@ -290,7 +304,9 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
-            ood = opt.ood if hasattr(opt, 'ood') else False
+            ood = opt.ood if hasattr(opt, 'ood') else False,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
@@ -304,7 +320,9 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
-            ood = opt.ood if hasattr(opt, 'ood') else False
+            ood = opt.ood if hasattr(opt, 'ood') else False,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
     elif opt.dataset == '1d_diffusion_reaction_multiparam':
         
@@ -323,7 +341,9 @@ def load_dataset(opt):
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
-            shuffle=True
+            shuffle=True,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
         test_data = OneD_Advection_Burgers_MultiParam(
             data_root=opt.data_root,
@@ -337,6 +357,8 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
+            total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
+            percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
     elif opt.dataset == '1d_advection_multiparam_fno_rnn':
         from data.oned_burger_advection import OneD_Advection_Burgers_MultiParam

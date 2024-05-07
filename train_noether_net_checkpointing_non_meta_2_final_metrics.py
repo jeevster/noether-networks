@@ -642,10 +642,10 @@ for trial_num in range(opt.num_trials):
         if opt.reload_dir:
             checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt') if 'ckpt_model.pt' not in opt.reload_dir else opt.reload_dir
             checkpoint = torch.load(checkpoint_path, map_location= device)
-            # if opt.frozen_val_emb == True:
-                # 
-            # svg_model.frozen_emb = svg_model.emb
-            # svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
+            svg_model.frozen_emb = svg_model.emb
+            svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
+            svg_model.load_state_dict(checkpoint['model_state'])
+
 
             # from collections import OrderedDict
             # new_state_dict = OrderedDict()
@@ -653,9 +653,8 @@ for trial_num in range(opt.num_trials):
             # for k, v in state_dict.items():
             #     name = k[7:] # remove 'module.' of DataParallel/DistributedDataParallel
             #     new_state_dict[name] = v
-
-            svg_model.load_state_dict(checkpoint['model_state'])
             # svg_model.load_state_dict(new_state_dict)
+
         # if (hasattr(opt, 'frozen_val_emb') == True) and (hasattr(opt, 'frozen_train_emb') == True):
         #     svg_model.frozen_emb = svg_model.emb
         #     svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
@@ -1004,6 +1003,7 @@ for trial_num in range(opt.num_trials):
                             outer_loss = opt_outer_mse_loss + outer_pde_loss
                         total_val_loss = outer_loss if opt.use_embedding == False else val_embedding_loss + outer_loss
                         # val_prediction_collector.append([gen_seq, batch,params[0]])
+                        val_prediction_collector.append([params[0]])
                         # gen_seq = val_prediction_collector[sorted_idx][0]
                         # batch = val_prediction_collector[sorted_idx][1]
                         
@@ -1078,44 +1078,44 @@ for trial_num in range(opt.num_trials):
 
         with open(f'{save_dir}/saved_dictionary.pkl', 'wb') as f:
             pickle.dump(save_dict, f)
-        # if '1d' in opt.dataset:
-        #     val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
-        #     if 'burgers' not in opt.dataset: 
-        #         sorted_indices = np.argsort(val_rel_losses)
-        #         print(sorted_indices)
-        #         for img_idx, sorted_idx in enumerate(sorted_indices):
-        #             plt.figure()
-        #             plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-        #             plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-        #             plt.legend()
-        #             plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
-        #             plt.xlabel('x-spatial coordinates')
-        #             plt.show()
-        #             plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
-        #     else:
-        #         sorted_indices = np.argsort(val_mse_losses)
-        #         for img_idx, sorted_idx in enumerate(sorted_indices):
-        #             plt.figure()
-        #             plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-        #             plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-        #             plt.legend()
-        #             plt.title(f'mse: {val_mse_losses[img_idx]:0.3}')
-        #             plt.xlabel('x-spatial coordinates')
-        #             plt.show()
-        #             plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
-        #     gt = []
-        #     pred = []
-        #     for nu, nu_pred in param_collector:
-        #         gt.append(nu.detach().cpu().item())
-        #         pred.append(nu_pred.detach().cpu().item())
-        #     plt.figure()
-        #     plt.scatter(x = gt, y = pred)
-        #     plt.plot([min(gt),max(gt)],[min(gt),max(gt)], color = 'black')
-        #     plt.xlabel('gt')
-        #     plt.ylabel('pred')
-        #     plt.title('parameters ground truth vs predicted')
-        #     plt.show()
-        #     plt.savefig(f"{save_dir}/pred_params.jpg")
+        if '1d' in opt.dataset:
+            # val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
+            # if 'burgers' not in opt.dataset: 
+            #     sorted_indices = np.argsort(val_rel_losses)
+            #     print(sorted_indices)
+            #     for img_idx, sorted_idx in enumerate(sorted_indices):
+            #         plt.figure()
+            #         plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+            #         plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+            #         plt.legend()
+            #         plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
+            #         plt.xlabel('x-spatial coordinates')
+            #         plt.show()
+            #         plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+            # else:
+            #     sorted_indices = np.argsort(val_mse_losses)
+            #     for img_idx, sorted_idx in enumerate(sorted_indices):
+            #         plt.figure()
+            #         plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+            #         plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+            #         plt.legend()
+            #         plt.title(f'mse: {val_mse_losses[img_idx]:0.3}')
+            #         plt.xlabel('x-spatial coordinates')
+            #         plt.show()
+            #         plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+            gt = []
+            pred = []
+            for nu, nu_pred in param_collector:
+                gt.append(nu.detach().cpu().item())
+                pred.append(nu_pred.detach().cpu().item())
+            plt.figure()
+            plt.scatter(x = gt, y = pred)
+            plt.plot([min(gt),max(gt)],[min(gt),max(gt)], color = 'black')
+            plt.xlabel('gt')
+            plt.ylabel('pred')
+            plt.title('parameters ground truth vs predicted')
+            plt.show()
+            plt.savefig(f"{save_dir}/pred_params.jpg")
 
         # else:
 

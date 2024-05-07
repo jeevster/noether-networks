@@ -747,225 +747,239 @@ for trial_num in range(opt.num_trials):
             
             svg_model.eval()
 
-            # for batch_num in tqdm(range(opt.num_val_batch)):
+            for batch_num in tqdm(range(opt.num_val_batch)):
                 
-            #     batch, params = next(testing_batch_generator)
-            #     params = tuple([param.to(torch.cuda.current_device()) for param in params])
-            #     # pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
-            #     with torch.no_grad():
-            #         # we optionally evaluate a baseline (untailored) model for comparison
-            #         prior_epses = []
-            #         posterior_epses = []
+                batch, params = next(testing_batch_generator)
+                params = tuple([param.to(torch.cuda.current_device()) for param in params])
+                # pde_value, true_pde_value, pred_params = embedding(data, return_params = True, true_params = params)
+                with torch.no_grad():
+                    # we optionally evaluate a baseline (untailored) model for comparison
+                    prior_epses = []
+                    posterior_epses = []
 
-            #         # Don't do this
-            #         if opt.baseline:
-            #             base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
-            #                 predict_many_steps(baseline_svg_model, batch, opt, mode='eval',
-            #                                    prior_epses=prior_epses, posterior_epses=posterior_epses, learnable_model = learnable_model)
-            #             base_outer_mse_loss, base_outer_pde_loss,_ = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
-            #                                        base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
-            #             base_outer_mse_loss = base_outer_mse_loss.mean()
-            #             base_outer_pde_loss = base_outer_pde_loss.mean()
-            #             base_outer_loss = base_outer_mse_loss + base_outer_pde_loss
-            #     # tailoring pass
-            #     val_cached_cn = [None]  # cached cn params
-            #     val_batch_inner_losses = []
-            #     val_batch_true_inner_losses = []
-            #     val_batch_svg_losses = []
-            #     val_batch_inner_param_losses = []
-            #     val_batch_true_inner_param_losses = []
-            #     val_batch_inner_gain = []
-            #     val_batch_true_inner_gain = []
-            #     for batch_step in range(opt.num_jump_steps + 1):
-            #         # jump steps are effectively inner steps that have a single higher innerloop_ctx per
-            #         # iteration, which allows for many inner steps during training without running
-            #         # into memory issues due to storing the whole dynamic computational graph
-            #         # associated with unrolling the sequence in the inner loop for many steps
-            #         # 
-            #         pre_tailor_params = copy.deepcopy(svg_model.frame_predictor.state_dict())
-            #         with torch.no_grad():
-            #             init_gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
-            #                 # no need for higher grads in val
-            #                 svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
-            #                 mode='eval',learnable_model = learnable_model,
-            #             )
-            #             # outer_loss, outer_pde_loss, outer_mse_loss, pde_residual, outer_relative_loss
-            #             # post_opt_outer_loss, post_outer_pde_loss, post_outer_data_loss,post_pde_residual_avg, post_relative_loss, post_log_inner_loss = compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
-            #             opt_outer_loss, pre_outer_pde_loss, pre_outer_data_loss, pre_pde_residual_avg, pre_relative_loss, pre_log_inner_loss = compute_losses(init_gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, true_pde_embedding, params, opt)
-            #             val_pre_inner_loss += pre_outer_pde_loss.cpu().item()
-            #             val_pre_outer_loss += pre_outer_data_loss.detach().cpu().item() #only log the data loss
-            #             val_pre_relative_loss += pre_relative_loss
-            #             val_pre_residual += pre_pde_residual_avg.detach().cpu().item()
-            #             val_pre_log_inner_loss += pre_log_inner_loss.detach().cpu().item()
-            #         # perform tailoring (autoregressive prediction, tailoring, predict again)
-            #         # 
-            #         # Tailor many steps uses opt.tailor to decide whether to tailor or not
-            #         replace_cn_layers(svg_model.frame_predictor)
-            #         if opt.use_adam_inner_opt:
-            #             inner_opt = optim.Adam(tailor_params, lr=opt.inner_lr)
-            #         else:
-            #             inner_opt = optim.SGD(tailor_params, lr=opt.inner_lr)
-            #         for tailor_step in range(opt.num_tuning_steps):
-            #             gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
-            #                                                         # no need for higher grads in val
-            #                                                         svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
-            #                                                         mode='eval',learnable_model = learnable_model,
-            #                                                         # extra kwargs
-            #                                                     )
-            #             tailor_opt_outer_loss, tailor_outer_pde_loss, tailor_outer_mse_loss,_,_,tailor_log_inner_loss = compute_losses(gen_seq, init_gen_seq, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
-            #             if tailor_step not in loss_per_step_tracker:
-            #                 loss_per_step_tracker[tailor_step] = 0
-            #                 inner_loss_per_step_tracker[tailor_step] = 0
-            #                 tailor_param_grads[tailor_step] = 0
-            #             loss_per_step_tracker[tailor_step] += (tailor_outer_mse_loss).detach().cpu().item()
-            #             inner_loss_per_step_tracker[tailor_step] += (tailor_outer_pde_loss).detach().cpu().item()
-            #             if opt.operator_loss:
-            #                 tailor_loss = tailor_outer_pde_loss + (tailor_opt_outer_loss)
-            #             else: 
-            #                 tailor_loss = tailor_outer_pde_loss
-            #             tailor_loss.backward()
-            #             # take max norm
-            #             tailor_param_grads[tailor_step] += max([-1. if p.grad is None else torch.max(torch.abs(p.grad)).item() for p in svg_model.parameters()])
-            #             if (tailor_step == opt.num_tuning_steps - 1) and (epoch % 10 == 0) and (opt.num_val_batch - 1 == batch_num):
-            #                 gradients = [torch.abs(p.grad).view(-1).tolist() if p.grad is not None else [-1] for p in svg_model.parameters()]
-            #                 for gradient in gradients:
-            #                     grad_collector_all.extend(gradient)
-            #             inner_opt.step()
-            #             svg_model.zero_grad(set_to_none=True)
+                    # Don't do this
+                    if opt.baseline:
+                        base_gen_seq, base_mus, base_logvars, base_mu_ps, base_logvar_ps = \
+                            predict_many_steps(baseline_svg_model, batch, opt, mode='eval',
+                                               prior_epses=prior_epses, posterior_epses=posterior_epses, learnable_model = learnable_model)
+                        base_outer_mse_loss, base_outer_pde_loss,_ = svg_crit(base_gen_seq, batch, base_mus, base_logvars,
+                                                   base_mu_ps, base_logvar_ps, true_pde_embedding, opt)
+                        base_outer_mse_loss = base_outer_mse_loss.mean()
+                        base_outer_pde_loss = base_outer_pde_loss.mean()
+                        base_outer_loss = base_outer_mse_loss + base_outer_pde_loss
+                # tailoring pass
+                val_cached_cn = [None]  # cached cn params
+                val_batch_inner_losses = []
+                val_batch_true_inner_losses = []
+                val_batch_svg_losses = []
+                val_batch_inner_param_losses = []
+                val_batch_true_inner_param_losses = []
+                val_batch_inner_gain = []
+                val_batch_true_inner_gain = []
+                for batch_step in range(opt.num_jump_steps + 1):
+                    # jump steps are effectively inner steps that have a single higher innerloop_ctx per
+                    # iteration, which allows for many inner steps during training without running
+                    # into memory issues due to storing the whole dynamic computational graph
+                    # associated with unrolling the sequence in the inner loop for many steps
+                    # 
+                    pre_tailor_params = copy.deepcopy(svg_model.frame_predictor.state_dict())
+                    with torch.no_grad():
+                        init_gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
+                            # no need for higher grads in val
+                            svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
+                            mode='eval',learnable_model = learnable_model,
+                        )
+                        # outer_loss, outer_pde_loss, outer_mse_loss, pde_residual, outer_relative_loss
+                        # post_opt_outer_loss, post_outer_pde_loss, post_outer_data_loss,post_pde_residual_avg, post_relative_loss, post_log_inner_loss = compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
+                        opt_outer_loss, pre_outer_pde_loss, pre_outer_data_loss, pre_pde_residual_avg, pre_relative_loss, pre_log_inner_loss = compute_losses(init_gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, true_pde_embedding, params, opt)
+                        val_pre_inner_loss += pre_outer_pde_loss.cpu().item()
+                        val_pre_outer_loss += pre_outer_data_loss.detach().cpu().item() #only log the data loss
+                        val_pre_relative_loss += pre_relative_loss
+                        val_pre_residual += pre_pde_residual_avg.detach().cpu().item()
+                        val_pre_log_inner_loss += pre_log_inner_loss.detach().cpu().item()
+                    # perform tailoring (autoregressive prediction, tailoring, predict again)
+                    # 
+                    # Tailor many steps uses opt.tailor to decide whether to tailor or not
+                    replace_cn_layers(svg_model.frame_predictor)
+                    if opt.use_adam_inner_opt:
+                        inner_opt = optim.Adam(tailor_params, lr=opt.inner_lr)
+                    else:
+                        inner_opt = optim.SGD(tailor_params, lr=opt.inner_lr)
+                    for tailor_step in range(opt.num_tuning_steps):
+                        gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
+                                                                    # no need for higher grads in val
+                                                                    svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
+                                                                    mode='eval',learnable_model = learnable_model,
+                                                                    # extra kwargs
+                                                                )
+                        tailor_opt_outer_loss, tailor_outer_pde_loss, tailor_outer_mse_loss,_,_,tailor_log_inner_loss = compute_losses(gen_seq, init_gen_seq, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
+                        if tailor_step not in loss_per_step_tracker:
+                            loss_per_step_tracker[tailor_step] = 0
+                            inner_loss_per_step_tracker[tailor_step] = 0
+                            tailor_param_grads[tailor_step] = 0
+                        loss_per_step_tracker[tailor_step] += (tailor_outer_mse_loss).detach().cpu().item()
+                        inner_loss_per_step_tracker[tailor_step] += (tailor_outer_pde_loss).detach().cpu().item()
+                        if opt.operator_loss:
+                            tailor_loss = tailor_outer_pde_loss + (tailor_opt_outer_loss)
+                        else: 
+                            tailor_loss = tailor_outer_pde_loss
+                        tailor_loss.backward()
+                        # take max norm
+                        tailor_param_grads[tailor_step] += max([-1. if p.grad is None else torch.max(torch.abs(p.grad)).item() for p in svg_model.parameters()])
+                        if (tailor_step == opt.num_tuning_steps - 1) and (epoch % 10 == 0) and (opt.num_val_batch - 1 == batch_num):
+                            gradients = [torch.abs(p.grad).view(-1).tolist() if p.grad is not None else [-1] for p in svg_model.parameters()]
+                            for gradient in gradients:
+                                grad_collector_all.extend(gradient)
+                        inner_opt.step()
+                        svg_model.zero_grad(set_to_none=True)
                     
-            #         with torch.no_grad():
-            #             gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
-            #                 # no need for higher grads in val
-            #                 svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
-            #                 mode='eval',learnable_model = learnable_model,
-            #             )
-            #             post_opt_outer_loss, post_outer_pde_loss, post_outer_data_loss,post_pde_residual_avg, post_relative_loss, post_log_inner_loss = compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
-            #             val_inner_loss += post_outer_pde_loss.detach().cpu().item() #only log the data loss
-            #             val_outer_loss += post_outer_data_loss.detach().cpu().item() #only log the data loss
-            #             val_relative_loss += post_relative_loss.detach().cpu().item()
-            #             val_post_residual += post_pde_residual_avg.detach().cpu().item()
-            #             val_log_inner_loss += post_log_inner_loss.detach().cpu().item()
-            #             for tracker_step in loss_per_step_tracker:
-            #                 if tracker_step not in rel_inner_loss_per_step_tracker:
-            #                     rel_inner_loss_per_step_tracker[tracker_step] = 0
-            #                     rel_loss_per_step_tracker[tracker_step] = 0
-            #                 rel_loss_per_step_tracker[tracker_step] += ((loss_per_step_tracker[tracker_step] - pre_outer_data_loss) / pre_outer_data_loss)#.mean().detach().cpu().item()
-            #                 rel_inner_loss_per_step_tracker[tracker_step]+= ((inner_loss_per_step_tracker[tracker_step] - val_pre_inner_loss) / val_pre_inner_loss)#.mean().detach().cpu().item()
+                    with torch.no_grad():
+                        gen_seq, mus, logvars, mu_ps, logvar_ps = dont_tailor_many_steps(
+                            # no need for higher grads in val
+                            svg_model, batch, true_pde_embedding, params, opt=opt, track_higher_grads=False,
+                            mode='eval',learnable_model = learnable_model,
+                        )
+                        post_opt_outer_loss, post_outer_pde_loss, post_outer_data_loss,post_pde_residual_avg, post_relative_loss, post_log_inner_loss = compute_losses(gen_seq, batch, mus, logvars, mu_ps, logvar_ps, true_pde_embedding, true_pde_embedding, params, opt)
+                        val_inner_loss += post_outer_pde_loss.detach().cpu().item() #only log the data loss
+                        val_outer_loss += post_outer_data_loss.detach().cpu().item() #only log the data loss
+                        val_relative_loss += post_relative_loss.detach().cpu().item()
+                        val_post_residual += post_pde_residual_avg.detach().cpu().item()
+                        val_log_inner_loss += post_log_inner_loss.detach().cpu().item()
+                        for tracker_step in loss_per_step_tracker:
+                            if tracker_step not in rel_inner_loss_per_step_tracker:
+                                rel_inner_loss_per_step_tracker[tracker_step] = 0
+                                rel_loss_per_step_tracker[tracker_step] = 0
+                            rel_loss_per_step_tracker[tracker_step] += ((loss_per_step_tracker[tracker_step] - pre_outer_data_loss) / pre_outer_data_loss)#.mean().detach().cpu().item()
+                            rel_inner_loss_per_step_tracker[tracker_step]+= ((inner_loss_per_step_tracker[tracker_step] - val_pre_inner_loss) / val_pre_inner_loss)#.mean().detach().cpu().item()
 
-            #             # val_prediction_collector.append([gen_seq, batch,params[0]])
-            #             val_loss_diff += ((post_outer_data_loss - pre_outer_data_loss) / pre_outer_data_loss).mean().detach().cpu().item()
-            #             val_inner_loss_diff += ((post_outer_pde_loss - pre_outer_pde_loss) / pre_outer_pde_loss).mean().detach().cpu().item()
-            #             val_residual_diff += ((post_pde_residual_avg - pre_pde_residual_avg) / pre_pde_residual_avg).mean().detach().cpu().item()
-            #             # if batch_num == 0:
-            #                 # plot_solution_field(init_gen_seq,gen_seq, batch,opt, params, epoch,save_dir)
-            #         if opt.baseline:
-            #             baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
+                        # val_prediction_collector.append([gen_seq, batch,params[0]])
+                        val_loss_diff += ((post_outer_data_loss - pre_outer_data_loss) / pre_outer_data_loss).mean().detach().cpu().item()
+                        val_inner_loss_diff += ((post_outer_pde_loss - pre_outer_pde_loss) / pre_outer_pde_loss).mean().detach().cpu().item()
+                        val_residual_diff += ((post_pde_residual_avg - pre_pde_residual_avg) / pre_pde_residual_avg).mean().detach().cpu().item()
+                        # if batch_num == 0:
+                            # plot_solution_field(init_gen_seq,gen_seq, batch,opt, params, epoch,save_dir)
+                    if opt.baseline:
+                        baseline_outer_loss += base_outer_mse_loss.detach().cpu().item()
 
-            #         # writer.add_scalar('val param grads post tailor', np.mean(val_param_grads[-1]),
-            #             #   (len(val_param_grads)))
-            #         svg_model.frame_predictor.load_state_dict(pre_tailor_params)
-            #     #SR: want to log inner losses for all tailoring steps, not just the first step
+                    # writer.add_scalar('val param grads post tailor', np.mean(val_param_grads[-1]),
+                        #   (len(val_param_grads)))
+                    svg_model.frame_predictor.load_state_dict(pre_tailor_params)
+                #SR: want to log inner losses for all tailoring steps, not just the first step
 
 
-            # val_svg_losses.append([sum(x) / (opt.num_val_batch) for x in zip(*epoch_val_svg_losses)])
-            # val_outer_losses.append(val_outer_loss/ (opt.num_val_batch))
-            # val_relative_losses.append(val_relative_loss / (opt.num_val_batch))
-            # val_inner_losses.append(val_inner_loss / (opt.num_val_batch))
+            val_svg_losses.append([sum(x) / (opt.num_val_batch) for x in zip(*epoch_val_svg_losses)])
+            val_outer_losses.append(val_outer_loss/ (opt.num_val_batch))
+            val_relative_losses.append(val_relative_loss / (opt.num_val_batch))
+            val_inner_losses.append(val_inner_loss / (opt.num_val_batch))
             
-            # val_pre_log_inner_losses.append(val_pre_log_inner_loss / (opt.num_val_batch))
-            # val_log_inner_losses.append(val_log_inner_loss / (opt.num_val_batch))
+            val_pre_log_inner_losses.append(val_pre_log_inner_loss / (opt.num_val_batch))
+            val_log_inner_losses.append(val_log_inner_loss / (opt.num_val_batch))
 
-            # val_residual_losses.append(val_post_residual / (opt.num_val_batch))
+            val_residual_losses.append(val_post_residual / (opt.num_val_batch))
 
-            # val_pre_outer_losses.append(val_pre_outer_loss / (opt.num_val_batch))
-            # val_pre_relative_losses.append(val_pre_relative_loss / (opt.num_val_batch))
+            val_pre_outer_losses.append(val_pre_outer_loss / (opt.num_val_batch))
+            val_pre_relative_losses.append(val_pre_relative_loss / (opt.num_val_batch))
 
-            # val_gain_outer_losses.append(val_loss_diff / (opt.num_val_batch))
+            val_gain_outer_losses.append(val_loss_diff / (opt.num_val_batch))
             
-            # val_pre_residual_losses.append(val_pre_residual / (opt.num_val_batch) )
-            # val_gain_residual_losses.append(val_residual_diff / (opt.num_val_batch) )
+            val_pre_residual_losses.append(val_pre_residual / (opt.num_val_batch) )
+            val_gain_residual_losses.append(val_residual_diff / (opt.num_val_batch) )
 
-            # val_pre_inner_losses.append(val_pre_inner_loss / (opt.num_val_batch))
-            # val_gain_inner_losses.append(val_inner_loss_diff / (opt.num_val_batch))
+            val_pre_inner_losses.append(val_pre_inner_loss / (opt.num_val_batch))
+            val_gain_inner_losses.append(val_inner_loss_diff / (opt.num_val_batch))
 
-            # if opt.baseline:
-            #     baseline_outer_losses.append(
-            #         baseline_outer_loss / (opt.num_val_batch))
-            # # 
-            # writer.add_scalars('Outer Loss/val', {
-            #                                 'post':  val_outer_losses[-1],
-            #                                 'pre':   val_pre_outer_losses[-1],
-            #                             },(epoch + 1))
+            if opt.baseline:
+                baseline_outer_losses.append(
+                    baseline_outer_loss / (opt.num_val_batch))
+            # 
+            writer.add_scalars('Outer Loss/val', {
+                                            'post':  val_outer_losses[-1],
+                                            'pre':   val_pre_outer_losses[-1],
+                                        },(epoch + 1))
 
-            # writer.add_scalars('Outer Relative Loss/val', {
-            #                                 'post':  val_relative_losses[-1],
-            #                                 'pre':   val_pre_relative_losses[-1],
-            #                             },(epoch + 1))
+            writer.add_scalars('Outer Relative Loss/val', {
+                                            'post':  val_relative_losses[-1],
+                                            'pre':   val_pre_relative_losses[-1],
+                                        },(epoch + 1))
             # if epoch % 10 == 0:
             #     writer.add_histogram(f'gradient profile', np.array(grad_collector_all), epoch)
-            # writer.add_scalar('Outer Loss/val/gain', val_gain_outer_losses[-1], (epoch + 1))
-            # writer.add_scalar('Outer Relative Loss/val/gain', val_gain_residual_losses[-1], (epoch + 1))
+            writer.add_scalar('Outer Loss/val/gain', val_gain_outer_losses[-1], (epoch + 1))
+            writer.add_scalar('Outer Relative Loss/val/gain', val_gain_residual_losses[-1], (epoch + 1))
 
-            # writer.add_scalars('Inner Loss/val', {
-            #                                 'post':  val_inner_losses[-1],
-            #                                 'pre':   val_pre_inner_losses[-1],
-            #                             },(epoch + 1))
-            # writer.add_scalar(
-            #             f'True Log Inner Loss/val', val_log_inner_losses[-1],(epoch + 1))
-            # writer.add_scalars(
-            #             f'True Log Inner Loss/val/Final', {
-            #                                 'post': val_log_inner_losses[-1],
-            #                                 'pre': val_pre_log_inner_losses[-1],
-            #                             }, (epoch + 1))
+            writer.add_scalars('Inner Loss/val', {
+                                            'post':  val_inner_losses[-1],
+                                            'pre':   val_pre_inner_losses[-1],
+                                        },(epoch + 1))
+            writer.add_scalar(
+                        f'True Log Inner Loss/val', val_log_inner_losses[-1],(epoch + 1))
+            writer.add_scalars(
+                        f'True Log Inner Loss/val/Final', {
+                                            'post': val_log_inner_losses[-1],
+                                            'pre': val_pre_log_inner_losses[-1],
+                                        }, (epoch + 1))
             
-            # writer.add_scalar('Inner Loss/val/gain', val_gain_inner_losses[-1], (epoch + 1))
+            writer.add_scalar('Inner Loss/val/gain', val_gain_inner_losses[-1], (epoch + 1))
 
-            # writer.add_scalars('PDE Residual/val', {
-            #                                 'post':  val_residual_losses[-1],
-            #                                 'pre':   val_pre_residual_losses[-1],
-            #                             },(epoch + 1))
+            writer.add_scalars('PDE Residual/val', {
+                                            'post':  val_residual_losses[-1],
+                                            'pre':   val_pre_residual_losses[-1],
+                                        },(epoch + 1))
             
-            # writer.add_scalar('PDE Residual Loss/val/gain', val_gain_residual_losses[-1], (epoch + 1))
+            writer.add_scalar('PDE Residual Loss/val/gain', val_gain_residual_losses[-1], (epoch + 1))
 
 
-            # writer.add_scalars(f'Per Step Outer Loss/val',{
-            #                 str(step):loss_per_step_tracker[step] / (opt.num_val_batch) for step in loss_per_step_tracker
-            #                 }, epoch + 1)
-            # writer.add_scalars(f'Per Step Rel Outer Loss/val',{
-            #                 str(step):rel_loss_per_step_tracker[step] / (opt.num_val_batch) for step in rel_loss_per_step_tracker
-            #                 }, epoch + 1)
-            # writer.add_scalars(f'Per Step Inner Loss/val',{
-            #                 str(step):inner_loss_per_step_tracker[step] / (opt.num_val_batch) for step in inner_loss_per_step_tracker
-            #                 }, epoch + 1)
-            # writer.add_scalars(f'Per Step Rel Inner Loss/val',{
-            #                 str(step):rel_inner_loss_per_step_tracker[step] / (opt.num_val_batch) for step in rel_inner_loss_per_step_tracker
-            #                 }, epoch + 1)
-            # writer.add_scalars(f'Per Step Gradients', {
-            #                 str(step):tailor_param_grads[step] / (opt.num_val_batch) for step in tailor_param_grads
-            #                 }, epoch + 1)
-            # if epoch % 10 == 0:
-            #     for step in loss_per_step_tracker:
-            #         # writer.add_scalar(f'lo')
-            #         writer.add_scalar(f'Per epoch tailor step {epoch} Outer Loss', loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
-            #         writer.add_scalar(f'Per epoch tailor step {epoch} Rel Outer Loss', rel_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
-            #         writer.add_scalar(f'Per epoch tailor step {epoch} Inner Loss', inner_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
-            #         writer.add_scalar(f'Per epoch tailor step {epoch} Rel Outer Loss', rel_inner_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
-            #         writer.add_scalar(f'Per epoch tailor step {epoch} Grad Norm', tailor_param_grads[step] / (opt.num_val_batch), step + 1)
-            # if opt.baseline:
-            #     writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
-            #                       (epoch + 1))
-            #     if opt.verbose:
-            #         print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
+            writer.add_scalars(f'Per Step Outer Loss/val',{
+                            str(step):loss_per_step_tracker[step] / (opt.num_val_batch) for step in loss_per_step_tracker
+                            }, epoch + 1)
+            writer.add_scalars(f'Per Step Rel Outer Loss/val',{
+                            str(step):rel_loss_per_step_tracker[step] / (opt.num_val_batch) for step in rel_loss_per_step_tracker
+                            }, epoch + 1)
+            writer.add_scalars(f'Per Step Inner Loss/val',{
+                            str(step):inner_loss_per_step_tracker[step] / (opt.num_val_batch) for step in inner_loss_per_step_tracker
+                            }, epoch + 1)
+            writer.add_scalars(f'Per Step Rel Inner Loss/val',{
+                            str(step):rel_inner_loss_per_step_tracker[step] / (opt.num_val_batch) for step in rel_inner_loss_per_step_tracker
+                            }, epoch + 1)
+            writer.add_scalars(f'Per Step Gradients', {
+                            str(step):tailor_param_grads[step] / (opt.num_val_batch) for step in tailor_param_grads
+                            }, epoch + 1)
+            if epoch % 10 == 0:
+                for step in loss_per_step_tracker:
+                    # writer.add_scalar(f'lo')
+                    writer.add_scalar(f'Per epoch tailor step {epoch} Outer Loss', loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
+                    writer.add_scalar(f'Per epoch tailor step {epoch} Rel Outer Loss', rel_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
+                    writer.add_scalar(f'Per epoch tailor step {epoch} Inner Loss', inner_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
+                    writer.add_scalar(f'Per epoch tailor step {epoch} Rel Outer Loss', rel_inner_loss_per_step_tracker[step] / opt.num_val_batch, step + 1)
+                    writer.add_scalar(f'Per epoch tailor step {epoch} Grad Norm', tailor_param_grads[step] / (opt.num_val_batch), step + 1)
+            if opt.baseline:
+                writer.add_scalar('Outer Loss/baseline', baseline_outer_losses[-1],
+                                  (epoch + 1))
+                if opt.verbose:
+                    print(f'\tOuter BASE loss:  {baseline_outer_losses[-1]}')
             
-            # if opt.verbose:
-            #     print(f'\tInner VAL loss: {val_inner_losses[-1]}')
-            # for step, value in enumerate(val_svg_losses[-1]):
-            #     writer.add_scalar(
-            #         f'SVG Loss/val/{step} Step', value, (epoch + 1))
-            # if opt.verbose:
-            #     print(f'\tSVG VAL loss: {val_svg_losses[-1]}')
-            # writer.flush()
+            if opt.verbose:
+                print(f'\tInner VAL loss: {val_inner_losses[-1]}')
+            for step, value in enumerate(val_svg_losses[-1]):
+                writer.add_scalar(
+                    f'SVG Loss/val/{step} Step', value, (epoch + 1))
+            if opt.verbose:
+                print(f'\tSVG VAL loss: {val_svg_losses[-1]}')
+            writer.flush()
         # #checkpointing best val
+                #checkpointing best val
+        if opt.save_checkpoint:
+            if opt.ckpt_outer_loss:
+                if  min_val_outer_loss > val_outer_losses[-1]:
+                    min_val_outer_loss = val_outer_losses[-1]
+                    save_checkpoint(svg_model, save_dir, True, False, False)
+            if opt.ckpt_inner_loss:
+                if  min_val_inner_loss > val_inner_losses[-1][-1]:
+                    min_val_inner_loss = val_inner_losses[-1][-1]
+                    save_checkpoint(svg_model, save_dir, False, True, False)        
+            if opt.ckpt_svg_loss:
+                if  min_val_svg_loss > val_svg_losses[-1][-1]:
+                    min_val_svg_loss = val_svg_losses[-1][-1]
+                    save_checkpoint(svg_model, save_dir, False, False, True)    
         # Training
         print(f'Train {epoch} Epoch')
         if epoch < 500:

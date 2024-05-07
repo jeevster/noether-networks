@@ -518,29 +518,29 @@ for epoch in range(0, opt.n_epochs):
                 plt.show()
                 plt.savefig(save_dir + '/pred_vs_gt_params.png')
 
-                plt.figure()
-                plt.scatter(x = param_collector, y = final_pde_loss_params)
-                # plt.xscale('log')
-                plt.title('pde resiudal')
-                plt.show()
-                plt.savefig(save_dir + '/pde_res_loss.png')
+                # plt.figure()
+                # plt.scatter(x = param_collector, y = final_pde_loss_params)
+                # # plt.xscale('log')
+                # plt.title('pde resiudal')
+                # plt.show()
+                # plt.savefig(save_dir + '/pde_res_loss.png')
 
-                plt.figure()
-                plt.scatter(x = param_collector, y = final_nu_loss)
-                # plt.xscale('log')
-                plt.xlabel('parameter values')
-                plt.ylabel('relative error')
-                plt.yscale('log')
-                if opt.dataset == '1d_advection_multiparam':
-                    plt.title('beta loss')
-                if opt.dataset == '1d_diffusion_reaction_multiparam':
-                    plt.title('rho loss')
-                if opt.dataset == '1d_burgers_multiparam':
-                    plt.title('nu loss')
-                if opt.dataset == '2d_reacdiff_multiparam':
-                    plt.title('k loss')
-                plt.show()
-                plt.savefig(save_dir + '/nu_loss.png')
+                # plt.figure()
+                # plt.scatter(x = param_collector, y = final_nu_loss)
+                # # plt.xscale('log')
+                # plt.xlabel('parameter values')
+                # plt.ylabel('relative error')
+                # plt.yscale('log')
+                # if opt.dataset == '1d_advection_multiparam':
+                #     plt.title('beta loss')
+                # if opt.dataset == '1d_diffusion_reaction_multiparam':
+                #     plt.title('rho loss')
+                # if opt.dataset == '1d_burgers_multiparam':
+                #     plt.title('nu loss')
+                # if opt.dataset == '2d_reacdiff_multiparam':
+                #     plt.title('k loss')
+                # plt.show()
+                # plt.savefig(save_dir + '/nu_loss.png')
 
             if opt.param_loss:
                 scheduler.step(val_param_loss)
