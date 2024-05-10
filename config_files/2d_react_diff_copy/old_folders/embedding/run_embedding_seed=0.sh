@@ -1,0 +1,52 @@
+DATADIR=/data/nithinc/pdebench/new_parameters/2D/ReactionDiffusion
+LOSS=mse
+# --save_checkpoint \
+SEED=0
+python train_embedding.py \
+--seed $SEED \
+--outer_loss $LOSS \
+--image_width 128 \
+--g_dim 128 \
+--z_dim 64 \
+--advection_emb \
+--dataset 2d_reacdiff_multiparam \
+--data_root $DATADIR \
+--num_trials 1 \
+--n_past 2 \
+--n_future 2 \
+--num_threads 0 \
+--ckpt_every 10 \
+--inner_crit_mode mse \
+--inner_crit_compare_to prev \
+--enc_dec_type vgg \
+--emb_type conserved \
+--num_epochs_per_val 1 \
+--fno_modes 16 \
+--fno_width 256 \
+--fno_layers 4 \
+--emb_dim 64 \
+--pde_emb \
+--batch_size 1 \
+--num_inner_steps 1 \
+--num_jump_steps 0 \
+--n_epochs 1 \
+--inner_lr .0001 \
+--val_inner_lr .0001 \
+--outer_lr .0001 \
+--outer_opt_model_weights \
+--random_weights \
+--only_twenty_degree \
+--frame_step 1 \
+--center_crop 1080 \
+--num_emb_frames 2 \
+--horiz_flip \
+--reuse_lstm_eps \
+--num_learned_parameters 1 \
+--use_partials \
+--reload_dir /data/divyam123/results_noether_summer/2d_react_diff_multiparam/ckpt_temp/pre_trained_embedding_seed=0/Sat-Mar-16-02.38.31-2024_past=2_future=2_tailor=PDE/best_ckpt_model.pt \
+--log_dir /data/divyam123/results_noether_summer/2d_react_diff_multiparam/baseline_2/pretrained_embedding_seed=$SEED \
+--channels 2 \
+--tailor \
+--random_weights \
+--inner_opt_all_model_weights \
+--batch_norm_to_group_norm \
