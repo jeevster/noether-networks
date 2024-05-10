@@ -22,7 +22,7 @@ STOREDIR=/global/cfs/projectdirs/m4319/divyam123/slurm_runs
 SEED=1
 weight=1/100
 lr=0.000001
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --use_init_frames_for_params \
 --emmbedding_param_loss \

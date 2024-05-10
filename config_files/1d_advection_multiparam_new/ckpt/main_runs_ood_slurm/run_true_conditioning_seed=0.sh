@@ -23,7 +23,7 @@ STOREDIR=/global/cfs/projectdirs/m4319/divyam123/slurm_runs
 SEED=0
 LOSS=mse
 
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --ood \
 --seed $SEED \
 --conditioning \

@@ -22,7 +22,7 @@ STOREDIR=/global/cfs/projectdirs/m4319/divyam123/slurm_runs
 
 SEED=1
 LOSS=mse
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --pinn_outer_loss \
 --inner_opt_all_model_weights \

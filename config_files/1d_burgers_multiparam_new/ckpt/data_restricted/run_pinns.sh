@@ -5,7 +5,7 @@ TRAJ_RESTRICTION=0.1
 SEED=0
 LOGDIR=/data/divyam123/slurm_runs/results_noether_summer/1d_burgers_new_params_clean/ckpt/seed=$SEED/trajectory_restriction
 EMBDIR=/data/divyam123/slurm_runs/results_noether_summer/1d_burgers_multiparam_clean/ckpt/seed=$SEED/pretrained_embedding_mse/final/best_ckpt_model.pt
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --percent_trajectories $TRAJ_RESTRICTION \
 --pinn_outer_loss \

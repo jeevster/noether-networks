@@ -6,7 +6,7 @@ SEED=2
 LOSS=mse
 DATAREG=1
 PDEREG=1
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --data_loss_reg $DATAREG \
 --pde_loss_reg $PDEREG \

@@ -142,29 +142,34 @@ class TwoDDiffusionReactionEmbedding(torch.nn.Module):
                 partials = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, None, None, None, compute_residual = False, return_partials = True)
         #predict params using network
         input_data = torch.cat([solution_field, partials], dim = 1) if self.use_partials else solution_field
-        params = self.paramnet(input_data.to(torch.float64)) if self.learned else self.paramnet(input_data.to(torch.float64), *true_params)
-        #extract predicted params
-        k = params[:, 0]
-        #set Du and/or Du to their true values if not learnable
-        try:
-            Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
-            Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
-        except:
-            raise RuntimeError("At least one parameter fixed as not learnable, but true value not provided")
-        
+        if return_params:
+            params = self.paramnet(input_data.to(torch.float64)) if self.learned else self.paramnet(input_data.to(torch.float64), *true_params)
+            #extract predicted params
+            k = params[:, 0]
+            #set Du and/or Du to their true values if not learnable
+            try:
+                Du = params[:, 1] if self.num_learned_parameters >1 else Du_true
+                Dv = params[:, 2] if self.num_learned_parameters >2 else Dv_true
+            except:
+                raise RuntimeError("At least one parameter fixed as not learnable, but true value not provided")
+        else:
+            k = k_true
+            Du = Du_true
+            Dv = Dv_true
         #compute PDE residual
         residual = reaction_diff_2d_residual_compute(u_stack, v_stack, self.x, self.y, self.dt, k, Du, Dv)
+        return residual, true_residual, (k, Du, Dv)
 
-        if return_params:
-            if true_params is not None:
-                return residual, true_residual, (k, Du, Dv)
-            else:
-                return residual, (k, Du, Dv)
-        else:
-            if true_params is not None:
-                return residual, true_residual
-            else:
-                return residual
+        # if return_params:
+        #     if true_params is not None:
+        #         return residual, true_residual, (k, Du, Dv)
+        #     else:
+        #         return residual, (k, Du, Dv)
+        # else:
+        #     if true_params is not None:
+        #         return residual, true_residual
+        #     else:
+        #         return residual
 
         # compute spatial derivatives only on most recent frame (use 4th order central difference scheme)
         

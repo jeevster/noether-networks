@@ -4,7 +4,7 @@ DATADIR=/data/divyam123/advection_log_space_res_1024_start=1e-2_end=2_multiparam
 LOSS=mse
 for SEED in 0 1 2
 do
-    python train_noether_net_checkpointing_non_meta_2.py \
+    python train_noether_net.py \
     --ood \
     --seed $SEED \
     --inner_opt_all_model_weights \

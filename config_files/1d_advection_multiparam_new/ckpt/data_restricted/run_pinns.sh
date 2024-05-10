@@ -3,7 +3,7 @@ TRAJ_RESTRICTION=0.1
 
 SEED=0
 LOSS=mse
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --percent_trajectories $TRAJ_RESTRICTION \
 --pinn_outer_loss \

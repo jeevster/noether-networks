@@ -29,7 +29,7 @@ lr=0.00005
 
 LOGDIR=$STOREDIR/slurm_runs_lr_sweep/results_noether_summer/1d_burgers_new_params_clean/ckpt/seed=$SEED/no_norm_steps=5
 EMBDIR=$STOREDIR/results_noether_summer/1d_burgers_multiparam_clean/ckpt/seed=$SEED/pretrained_embedding_param_loss/final/best_ckpt_model.pt
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --use_init_frames_for_params \
 --emmbedding_param_loss \
 --seed $SEED \
