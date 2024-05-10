@@ -70,24 +70,7 @@ def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
         embs = [pde_crit(frame, true_params = true_params)[0] for frame in gen_seq]
     elif opt.num_emb_frames > 1:
         assert(len(gen_seq) >= opt.num_emb_frames)
-        stacked_gen_seq = []
-        for i in range(opt.num_emb_frames, len(gen_seq)+1):
-            stacked_gen_seq.append(
-                torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1))
-            
-        # [ini-2, nii-1, pred1, pred2]
-        # []
-        
-        #[init1-init2, init2-pred1, pred1-pred2]
-        # (very low, very high, medium?)
-
-        #[(B,1),(B,1),(B,1)]
-        # for frame in stacked_gen_seq:
-        #     pde_value, true_pde_value, pred_params = pde_crit(frame, true_params = true_params, return_params = True)
-        #     embs.append(pde_value)
-        #     param_loss.append(pred_params)
-        pde_value, true_pde_value, pred_params = pde_crit(torch.stack([g for g in gen_seq[i-opt.num_emb_frames:i]], dim=1), true_params = true_params, return_params = True)
-        # assert(len(embs) == len(gen_seq) - opt.num_emb_frames + 1)  
+        pde_value, true_pde_value, pred_params = pde_crit(torch.stack(gen_seq, dim=1), true_params = true_params, return_params = True)
         embs.append(pde_value)
     else:
         raise ValueError
@@ -269,6 +252,7 @@ def load_dataset(opt):
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
+            ood = opt.ood if hasattr(opt, 'ood') else False,
             total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
             percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
@@ -284,6 +268,7 @@ def load_dataset(opt):
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
+            ood = opt.ood if hasattr(opt, 'ood') else False,
             total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
             percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
@@ -342,6 +327,7 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
+            ood = opt.ood if hasattr(opt, 'ood') else False,
             total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
             percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )
@@ -357,6 +343,7 @@ def load_dataset(opt):
             fixed_ic = opt.fixed_ic,
             fixed_window = opt.fixed_window,
             shuffle=True,
+            ood = opt.ood if hasattr(opt, 'ood') else False,
             total_size_percent = opt.total_size_percent if hasattr(opt, 'total_size_percent') else 1,
             percent_trajectories = opt.percent_trajectories if hasattr(opt,'percent_trajectories') else 1
         )

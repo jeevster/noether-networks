@@ -640,12 +640,16 @@ for trial_num in range(opt.num_trials):
                              decoder, prior, posterior, outer_embedding if opt.use_embedding else embedding, true_pde_embedding,opt = opt).cuda()
         svg_model.apply(lambda t: t.cuda())
         if opt.reload_dir:
-            checkpoint_path = os.path.join(opt.reload_dir, 'ckpt_model.pt') if 'ckpt_model.pt' not in opt.reload_dir else opt.reload_dir
+            checkpoint_path = os.path.join(opt.reload_dir, 'best_outer_val_ckpt_model.pt') if 'best_outer_val_ckpt_model.pt' not in opt.reload_dir else opt.reload_dir
+            
             checkpoint = torch.load(checkpoint_path, map_location= device)
             svg_model.frozen_emb = svg_model.emb
             svg_model.frozen_emb = copy.deepcopy(svg_model.emb)
-            svg_model.load_state_dict(checkpoint['model_state'])
-
+            # keys = list(checkpoint['model_state'].keys())
+            # for k in keys:
+            #     if 'val' in k and 'CN' in k:
+            #         del checkpoint['model_state'][k]
+            svg_model.load_state_dict(checkpoint['model_state'], strict = False)
 
             # from collections import OrderedDict
             # new_state_dict = OrderedDict()
@@ -981,7 +985,7 @@ for trial_num in range(opt.num_trials):
                     svg_model.zero_grad(set_to_none=True)
                     with torch.no_grad():
                         # compute outer (task) loss
-                        
+                        # pdb.set_trace()
                         if opt.learned_pinn_loss and opt.pinn_outer_loss:
                             opt_outer_mse_loss, outer_pde_loss,outer_avg_pde_residual, outer_mse_loss, outer_relative_loss, outer_log_loss = svg_crit(
                                 gen_seq, batch, mus, logvars, mu_ps, logvar_ps, embedding, params, opt, 
@@ -1002,53 +1006,51 @@ for trial_num in range(opt.num_trials):
                         else:
                             outer_loss = opt_outer_mse_loss + outer_pde_loss
                         total_val_loss = outer_loss if opt.use_embedding == False else val_embedding_loss + outer_loss
-                        # val_prediction_collector.append([gen_seq, batch,params[0]])
-                        val_prediction_collector.append([params[0]])
-                        # gen_seq = val_prediction_collector[sorted_idx][0]
-                        # batch = val_prediction_collector[sorted_idx][1]
                         
-
-                        # fig, axes = plt.subplots(2,2)
-                        # var_1_gt = batch[-2][0,0].detach().cpu().numpy()
-                        # var_1_pred = gen_seq[-2][0,0].detach().cpu().numpy()
+                        if '1d' in opt.dataset:
+                            val_prediction_collector.append([gen_seq, batch,params[0]])
                         
-                        # dif = axes[0,0].imshow(np.abs(var_1_pred - var_1_gt))
-                        # axes[0,0].title.set_text('frame n = 1')
-                        # axes[0,0].set_ylabel('variable 1')
-                        # plt.colorbar(dif,ax=axes[0,0])
+                        if '2d' in opt.dataset:
+                            fig, axes = plt.subplots(2,2)
+                            var_1_gt = batch[-2][0,0].detach().cpu().numpy()
+                            var_1_pred = gen_seq[-2][0,0].detach().cpu().numpy()
+                            
+                            dif = axes[0,0].imshow(np.abs(var_1_pred - var_1_gt))
+                            axes[0,0].title.set_text('frame n = 1')
+                            axes[0,0].set_ylabel('variable 1')
+                            plt.colorbar(dif,ax=axes[0,0])
 
-                        # var_1_gt = batch[-1][0,0].detach().cpu().numpy()
-                        # var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
-                        # dif = axes[0,1].imshow(np.abs(var_1_pred - var_1_gt))
-                        # axes[0,1].title.set_text('frame n = 2')
-                        # axes[0,1].set_ylabel('variable 1')
-                        # plt.colorbar(dif,ax=axes[0,1])
+                            var_1_gt = batch[-1][0,0].detach().cpu().numpy()
+                            var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
+                            dif = axes[0,1].imshow(np.abs(var_1_pred - var_1_gt))
+                            axes[0,1].title.set_text('frame n = 2')
+                            axes[0,1].set_ylabel('variable 1')
+                            plt.colorbar(dif,ax=axes[0,1])
 
-                        # var_1_gt = batch[-2][0,1].detach().cpu().numpy()
-                        # var_1_pred = gen_seq[-2][0,1].detach().cpu().numpy()
-                        
-                        # dif = axes[1,0].imshow(np.abs(var_1_pred - var_1_gt))
-                        # axes[1,0].title.set_text('frame n = 1')
-                        # axes[1,0].set_ylabel('variable 2')
-                        # plt.colorbar(dif,ax=axes[1,0])
+                            var_1_gt = batch[-2][0,1].detach().cpu().numpy()
+                            var_1_pred = gen_seq[-2][0,1].detach().cpu().numpy()
+                            
+                            dif = axes[1,0].imshow(np.abs(var_1_pred - var_1_gt))
+                            axes[1,0].title.set_text('frame n = 1')
+                            axes[1,0].set_ylabel('variable 2')
+                            plt.colorbar(dif,ax=axes[1,0])
 
-                        # var_1_gt = batch[-1][0,1].detach().cpu().numpy()
-                        # var_1_pred = gen_seq[-1][0,1].detach().cpu().numpy()
-                        # dif = axes[1,1].imshow(np.abs(var_1_pred - var_1_gt))
-                        # axes[1,1].title.set_text('frame n = 2')
-                        # axes[1,1].set_ylabel('variable 2')
-                        # plt.colorbar(dif,ax=axes[1,1])
+                            var_1_gt = batch[-1][0,1].detach().cpu().numpy()
+                            var_1_pred = gen_seq[-1][0,1].detach().cpu().numpy()
+                            dif = axes[1,1].imshow(np.abs(var_1_pred - var_1_gt))
+                            axes[1,1].title.set_text('frame n = 2')
+                            axes[1,1].set_ylabel('variable 2')
+                            plt.colorbar(dif,ax=axes[1,1])
 
-                        # fig.tight_layout()
-                        # plt.suptitle(f'relative loss: {val_rel_losses[-1]:0.3}')
-                        # plt.show()
-                        # plt.savefig(f"{save_dir}/pred_{val_rel_losses[-1]:0.3}.jpg")
+                            fig.tight_layout()
+                            plt.suptitle(f'relative loss: {val_rel_losses[-1]:0.3}')
+                            plt.show()
+                            plt.savefig(f"{save_dir}/pred_{val_rel_losses[-1]:0.3}.jpg")
                         val_rel_losses.append(outer_relative_loss.detach().cpu().item())
                         val_pde_losses.append(outer_avg_pde_residual.detach().cpu().item())
                         val_param_losses.append(val_batch_gt_param_losses[-1])
                         val_mse_losses.append(outer_mse_loss.detach().cpu().item())
-                        # print(val_param_losses)
-                        #SR: want to log inner losses for all tailoring steps, not just the first step
+
                     val_relative_loss += outer_relative_loss.detach().cpu().item()
                     
                     val_outer_loss += outer_mse_loss.detach().cpu().item() #only log the data loss
@@ -1079,35 +1081,39 @@ for trial_num in range(opt.num_trials):
         with open(f'{save_dir}/saved_dictionary.pkl', 'wb') as f:
             pickle.dump(save_dict, f)
         if '1d' in opt.dataset:
-            # val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
-            # if 'burgers' not in opt.dataset: 
-            #     sorted_indices = np.argsort(val_rel_losses)
-            #     print(sorted_indices)
-            #     for img_idx, sorted_idx in enumerate(sorted_indices):
-            #         plt.figure()
-            #         plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-            #         plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-            #         plt.legend()
-            #         plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
-            #         plt.xlabel('x-spatial coordinates')
-            #         plt.show()
-            #         plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
-            # else:
-            #     sorted_indices = np.argsort(val_mse_losses)
-            #     for img_idx, sorted_idx in enumerate(sorted_indices):
-            #         plt.figure()
-            #         plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-            #         plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-            #         plt.legend()
-            #         plt.title(f'mse: {val_mse_losses[img_idx]:0.3}')
-            #         plt.xlabel('x-spatial coordinates')
-            #         plt.show()
-            #         plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+            val_rel_losses = [rel_loss for rel_loss in val_rel_losses if math.isfinite(rel_loss)]
+            if 'burgers' not in opt.dataset: 
+                sorted_indices = np.argsort(val_rel_losses)
+                print(sorted_indices)
+                for img_idx, sorted_idx in enumerate(sorted_indices):
+                    plt.figure()
+                    plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+                    plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+                    plt.legend()
+                    plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
+                    plt.xlabel('x-spatial coordinates')
+                    plt.show()
+                    plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
+            else:
+                sorted_indices = np.argsort(val_mse_losses)
+                for img_idx, sorted_idx in enumerate(sorted_indices):
+                    plt.figure()
+                    plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
+                    plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
+                    plt.legend()
+                    plt.title(f'mse: {val_mse_losses[img_idx]:0.3}')
+                    plt.xlabel('x-spatial coordinates')
+                    plt.show()
+                    plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
             gt = []
             pred = []
+            f = open(f"{save_dir}/parameter_predictions.txt", "w")
             for nu, nu_pred in param_collector:
                 gt.append(nu.detach().cpu().item())
                 pred.append(nu_pred.detach().cpu().item())
+                f.write(f'prediction:{nu_pred.detach().cpu().item()} ground_truth {nu.detach().cpu().item()}\n')
+            f.close()   
+            
             plt.figure()
             plt.scatter(x = gt, y = pred)
             plt.plot([min(gt),max(gt)],[min(gt),max(gt)], color = 'black')
@@ -1116,126 +1122,3 @@ for trial_num in range(opt.num_trials):
             plt.title('parameters ground truth vs predicted')
             plt.show()
             plt.savefig(f"{save_dir}/pred_params.jpg")
-
-        # else:
-
-            # sorted_indices = np.argsort(val_rel_losses)
-            # print(sorted_indices)
-            # for img_idx, sorted_idx in enumerate(sorted_indices):
-                # plt.figure()
-                # plt.plot(val_prediction_collector[sorted_idx][0][-1].reshape(-1).detach().cpu().numpy(), label ='ground_truth')
-                # plt.plot(val_prediction_collector[sorted_idx][1][-1].reshape(-1).detach().cpu().numpy(), label ='predicition')
-                # plt.legend()
-                # plt.title(f'relative error: {val_rel_losses[sorted_idx]:0.3}')
-                # plt.xlabel('x-spatial coordinates')
-                # plt.show()
-                # plt.savefig(f"{save_dir}/pred_{img_idx}.jpg")
-
-                # gen_seq = val_prediction_collector[sorted_idx][0]
-                # batch = val_prediction_collector[sorted_idx][1]
-                
-                # var_1_gt = batch[-1][0,0].detach().cpu().numpy()
-                # var_1_pred = gen_seq[-1][0,0].detach().cpu().numpy()
-
-                # fig, axes = plt.subplots(nrows=3)
-                # im = axes[0].imshow(var_1_gt)
-                # axes[0].title.set_text('var 1 gt')
-                # axes[0].set_xlabel('x_coordinate')
-                # axes[0].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[0])
-
-                # axes[1].imshow(var_1_pred)
-                # axes[1].title.set_text('var 1 pred')
-                # axes[1].set_xlabel('x_coordinate')
-                # axes[1].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[1])
-                
-                # dif = axes[2].imshow(np.abs(var_1_pred - var_1_gt))
-                # axes[2].title.set_text('absolute difference')
-                # axes[2].set_xlabel('x_coordinate')
-                # axes[2].set_ylabel('y_coordinate')
-                # plt.colorbar(dif,ax=axes[2])
-
-                # fig.tight_layout()
-                # plt.show()
-                # plt.savefig(f"{save_dir}/var_1_{img_idx}_frame=2_{rel_loss}")
-
-
-                # var_2_gt = batch[-1][0,1].detach().cpu().numpy()
-                # var_2_pred = gen_seq[-1][0,1].detach().cpu().numpy()
-
-                # fig, axes = plt.subplots(nrows=3)
-                # im = axes[0].imshow(var_2_gt)
-                # axes[0].title.set_text('var 2 gt')
-                # axes[0].set_xlabel('x_coordinate')
-                # axes[0].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[0])
-                    
-                # axes[1].imshow(var_2_pred)
-                # axes[1].title.set_text('var 2 pred')
-                # axes[1].set_xlabel('x_coordinate')
-                # axes[1].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[1])
-
-                # dif = axes[2].imshow(np.abs(var_2_pred - var_2_gt))
-                # axes[2].title.set_text('absolute difference')
-                # axes[2].set_xlabel('x_coordinate')
-                # axes[2].set_ylabel('y_coordinate')
-                # plt.colorbar(dif,ax=axes[2])
-
-                # fig.tight_layout()
-                # plt.show()
-                # plt.savefig(f"{save_dir}/var_2_{img_idx}_frame=2_{rel_loss}")
-
-                # var_1_gt = batch[-2][0,0].detach().cpu().numpy()
-                # var_1_pred = gen_seq[-2][0,0].detach().cpu().numpy()
-
-                # fig, axes = plt.subplots(nrows=3)
-                # im = axes[0].imshow(var_1_gt)
-                # axes[0].title.set_text('var 1 gt')
-                # axes[0].set_xlabel('x_coordinate')
-                # axes[0].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[0])
-
-                # axes[1].imshow(var_1_pred)
-                # axes[1].title.set_text('var 1 pred')
-                # axes[1].set_xlabel('x_coordinate')
-                # axes[1].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[1])
-                
-                # dif = axes[2].imshow(np.abs(var_1_pred - var_1_gt))
-                # axes[2].title.set_text('absolute difference')
-                # axes[2].set_xlabel('x_coordinate')
-                # axes[2].set_ylabel('y_coordinate')
-                # plt.colorbar(dif,ax=axes[2])
-
-                # fig.tight_layout()
-                # plt.show()
-                # plt.savefig(f"{save_dir}/var_1_{img_idx}_frame=1_{rel_loss}")
-
-
-                # var_2_gt = batch[-2][0,1].detach().cpu().numpy()
-                # var_2_pred = gen_seq[-2][0,1].detach().cpu().numpy()
-
-                # fig, axes = plt.subplots(nrows=3)
-                # im = axes[0].imshow(var_2_gt)
-                # axes[0].title.set_text('var 2 gt')
-                # axes[0].set_xlabel('x_coordinate')
-                # axes[0].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[0])
-                    
-                # axes[1].imshow(var_2_pred)
-                # axes[1].title.set_text('var 2 pred')
-                # axes[1].set_xlabel('x_coordinate')
-                # axes[1].set_ylabel('y_coordinate')
-                # plt.colorbar(im,ax=axes[1])
-
-                # dif = axes[2].imshow(np.abs(var_2_pred - var_2_gt))
-                # axes[2].title.set_text('absolute difference')
-                # axes[2].set_xlabel('x_coordinate')
-                # axes[2].set_ylabel('y_coordinate')
-                # plt.colorbar(dif,ax=axes[2])
-
-                # fig.tight_layout()
-                # plt.show()
-                # plt.savefig(f"{save_dir}/var_2_{img_idx}_frame=1_{rel_loss}")

@@ -194,7 +194,8 @@ parser.add_argument('--outer_loss', default='log',type=str, help='use log, mse o
 parser.add_argument('--reload_dir', default='',type=str, help='use log, mse or rmse loss')
 parser.add_argument('--log_param', action='store_true', help='use advection embedding')
 parser.add_argument('--gradient_clipping', action='store_true', help='to do gradient clipping or not')
-# parser.add_argument('--train_embedding', default=True, type=bool, help='dummy flag indicating we are training the embedding model only. DO NOT CHANGE')
+parser.add_argument('--ood', action = 'store_true',
+                    help='ood for 1d systems')
 
 
 opt = parser.parse_args()
@@ -518,6 +519,10 @@ for epoch in range(0, opt.n_epochs):
                 plt.show()
                 plt.savefig(save_dir + '/pred_vs_gt_params.png')
 
+                f = open(f"{save_dir}/parameter_predictions.txt", "w")
+                for idx in range(len(param_collector)):
+                    f.write(f'prediction:{param_collector[idx]} ground_truth {pred_param_collector[idx]}\n')
+                f.close()   
                 # plt.figure()
                 # plt.scatter(x = param_collector, y = final_pde_loss_params)
                 # # plt.xscale('log')

@@ -489,16 +489,7 @@ def tailor_many_steps(svg_model, x, true_pde_embedding, params, opt, track_highe
                     prior_epses = []
                     posterior_epses = []
 
-        # generate the final model prediction with the tailored weights
-        # if mode == 'eval':
-        #     with torch.no_grad():
-        #         final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
-        #                                                                         prior_epses=prior_epses,
-        #                                                                         posterior_epses=posterior_epses,
-        #                                                                         learnable_model = learnable_model,
-        #                                                                         phi_hat = kwargs['phi_hat'] if 'phi_hat' in kwargs else None
-        #                                                                     )
-        # else:
+
         final_gen_seq, mus, logvars, mu_ps, logvar_ps = predict_many_steps(fmodel, x, params, opt, mode=mode,
                                                                             prior_epses=prior_epses,
                                                                             posterior_epses=posterior_epses,

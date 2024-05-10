@@ -58,13 +58,22 @@ class OneD_Advection_Burgers_MultiParam(object):
             self.h5_paths = self.h5_paths[:num_param_combinations]
             self.h5_files = self.h5_files[:num_param_combinations]
         if ood:
-            # 0.028849327853371208, 0.6926961865675941
             if train:
                 self.seqs_temp = []
                 self.h5_paths_temp = []
                 self.h5_files_temp = []
                 for idx,path in enumerate(self.h5_paths):
-                    if self.extract_params_from_path(path)[0] >= 0.028849327853371208 and self.extract_params_from_path(path)[0] <= 0.6926961865675941:
+                    add_file = False
+                    if self.pde == 'advection':
+                        if self.extract_params_from_path(path)[0] > 0.028849327853371208 and self.extract_params_from_path(path)[0] < 0.6926961865675941:
+                            add_file = True
+                    if self.pde == 'burgers':
+                        if self.extract_params_from_path(path)[0] > 0.029150530628251757 and self.extract_params_from_path(path)[0] < 0.1286908705353679:
+                            add_file = True
+                    if self.pde == 'diffuion_reaction':
+                        if self.extract_params_from_path(path)[0] > 3 and self.extract_params_from_path(path)[0] < 9:
+                            add_file = True
+                    if add_file == True:
                         self.seqs_temp.append(self.seqs[idx])
                         self.h5_paths_temp.append(self.h5_paths[idx])
                         self.h5_files_temp.append(self.h5_files[idx])
@@ -76,7 +85,17 @@ class OneD_Advection_Burgers_MultiParam(object):
                 self.h5_paths_temp = []
                 self.h5_files_temp = []
                 for idx,path in enumerate(self.h5_paths):
-                    if self.extract_params_from_path(path)[0] < 0.028849327853371208 and self.extract_params_from_path(path)[0] > 0.6926961865675941:
+                    add_file = False
+                    if self.pde == 'advection':
+                        if self.extract_params_from_path(path)[0] <= 0.028849327853371208 or self.extract_params_from_path(path)[0] >= 0.6926961865675941:
+                            add_file = True
+                    if self.pde == 'burgers':
+                        if self.extract_params_from_path(path)[0] <= 0.029150530628251757 or self.extract_params_from_path(path)[0] >= 0.1286908705353679:
+                            add_file = True
+                    if self.pde == 'diffuion_reaction':
+                        if self.extract_params_from_path(path)[0] <= 3 or self.extract_params_from_path(path)[0] >= 9:
+                            add_file = True
+                    if add_file == True:
                         self.seqs_temp.append(self.seqs[idx])
                         self.h5_paths_temp.append(self.h5_paths[idx])
                         self.h5_files_temp.append(self.h5_files[idx])
