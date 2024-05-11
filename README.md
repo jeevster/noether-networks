@@ -98,3 +98,22 @@ metrics as numpy arrays.
 
 You can load and plot the metrics with the `generate_figures.ipynb` notebook, which also contains
 code to generate Grad-CAM heatmaps.
+
+
+DG: UPDATE 05-10-2024
+
+
+STEP 1: getting checkpoints
+
+config_files -> system of choice -> ckpt -> pick bash file and run
+    a) for noether, run train_noether_net.py
+    b) for PINO, run trainnoether_net_checkpointing_pino.py
+
+STEP 2: computing final values + plots
+
+config_files -> system of choice -> run_inference folders -> pick bash file and run
+    a) for noether, run train_noether_net_final_inference.py
+    b) for PINO, run train_noether_net_checkpointing_pino_final_inference.py
+
+Each final inference run will save a 'saved_dictionary.pkl' which contains the mean 
+and the batch variance of the final run
