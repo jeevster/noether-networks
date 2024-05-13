@@ -341,8 +341,6 @@ if opt.train_batch_size == None and opt.val_batch_size == None:
     opt.train_batch_size = opt.batch_size
     opt.val_batch_size = opt.batch_size
 
-if (opt.num_train_batch == -1) or (len(train_data) // opt.train_batch_size < opt.num_train_batch):
-    opt.num_train_batch = len(train_data) // opt.train_batch_size
 if (opt.num_val_batch == -1) or (len(test_data) // opt.val_batch_size < opt.num_val_batch):
     opt.num_val_batch = len(test_data) // opt.val_batch_size
 
@@ -368,8 +366,6 @@ testing_batch_generator = get_batch_generator(test_loader)
 print(opt)
 print('\nDatasets loaded!')
 
-print(f'train_data length: {len(train_data)}')
-print(f'num_train_batch: {opt.num_train_batch}')
 print(f'test_data length: {len(test_data)}')
 print(f'num_val_batch: {opt.num_val_batch}')
 # import pdb

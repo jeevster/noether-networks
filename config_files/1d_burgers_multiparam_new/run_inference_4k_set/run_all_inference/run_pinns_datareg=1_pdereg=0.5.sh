@@ -1,18 +1,27 @@
-#!/bin/bash
+DATAREG=1
+PDEREG=0.5
+
+
 DATADIR=/data/divyam123/burgers_4096_8192_-2_0.3
+LOSS=mse
+SEED=0
 for SEED in 0 1 2
 do
-    LOGDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_burgers_new_params_clean/baseline_4k_new_residual_15/seed=$SEED/no_norm_steps=5
-    RELOADDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_burgers_new_params_clean/ckpt/seed=$SEED/no_norm_steps=5
-    python train_noether_net_checkpointing_pino_final_metrics.py \
+    LOGDIR=/data/divyam123/slurm_runs_all/1d_burgers_new_params_clean/baseline/seed=$SEED/no_norm_steps=5
+    RELOADDIR=/data/divyam123/slurm_runs_all/1d_burgers_new_params_clean/ckpt/seed=$SEED/no_norm_steps=5
+
+    python train_noether_net_final_inference.py \
+    --percent_train 0.0 \
     --seed $SEED \
-    --operator_loss \
+    --data_loss_reg $DATAREG \
+    --pde_loss_reg $PDEREG \
     --pinn_outer_loss \
     --inner_opt_all_model_weights \
     --use_adam_inner_opt \
-    --outer_loss_choice mse \
-    --num_tuning_steps 5 \
     --emb_type pde_const_emb \
+    --relative_data_loss \
+    --outer_loss_choice mse \
+    --inner_crit_compare_to pde_zero \
     --image_width 128 \
     --g_dim 128 \
     --z_dim 64 \
@@ -23,7 +32,6 @@ do
     --n_future 2 \
     --num_threads 0 \
     --inner_crit_mode mse \
-    --inner_crit_compare_to pde_log \
     --enc_dec_type vgg \
     --num_epochs_per_val 1 \
     --fno_modes 16 \
@@ -33,6 +41,7 @@ do
     --val_batch_size 1 \
     --train_batch_size 16 \
     --train_num_inner_steps 1 \
+    --val_num_inner_steps 1 \
     --num_jump_steps 0 \
     --n_epochs 200 \
     --inner_lr 0.0001 \
@@ -48,10 +57,11 @@ do
     --reuse_lstm_eps \
     --num_learned_parameters 1 \
     --use_partials \
-    --log_dir $LOGDIR/run_pino \
-    --reload_dir $RELOADDIR/run_pino/final/best_outer_val_ckpt_model.pt \
+    --save_checkpoint \
+    --log_dir $LOGDIR/run_pinns_data=${DATAREG}_pde=${PDEREG}/ \
+    --reload_dir $RELOADDIR/run_pinns_data=${DATAREG}_pde=${PDEREG}/final/best_outer_val_ckpt_model.pt \
     --channels 1 \
     --random_weights \
     --batch_norm_to_group_norm \
     --model_path ./checkpoints/pdes/t_past2/batch_5d
-done
+done;

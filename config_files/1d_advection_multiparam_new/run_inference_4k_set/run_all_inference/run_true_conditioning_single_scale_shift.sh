@@ -1,28 +1,35 @@
-#!/bin/bash
 DATADIR=/data/divyam123/advection_subsample
 
-
-for SEED in 1 2
+for SEED in 0 1 2
 do
-    python train_noether_net_checkpointing_pino_final_metrics.py \
+    LOGDIR=/data/divyam123/slurm_runs_all/1d_advection_new_params/baseline/seed=$SEED/no_norm_steps=5
+    RELOADDIR=/data/divyam123/slurm_runs_all/1d_advection_new_params/ckpt/seed=$SEED/no_norm_steps=5
+
+    python train_noether_net_final_inference.py \
+    --percent_train 0.0 \
     --seed $SEED \
-    --operator_loss \
+    --conditioning \
+    --single_field \
+    --param_scale_shift_conditioning \
     --pinn_outer_loss \
+    --use_true_params_train \
+    --use_true_params_val \
     --inner_opt_all_model_weights \
     --use_adam_inner_opt \
-    --outer_loss_choice mse \
     --relative_data_loss \
-    --num_tuning_steps 5 \
+    --outer_loss_choice mse \
+    --inner_crit_compare_to pde_zero \
     --emb_type pde_const_emb \
     --image_width 128 \
     --g_dim 128 \
     --z_dim 64 \
     --dataset 1d_advection_multiparam \
     --data_root $DATADIR \
-    --num_trials 1 \
+    --num_trials 2 \
     --n_past 2 \
     --n_future 2 \
     --num_threads 0 \
+    --ckpt_every 10 \
     --inner_crit_mode mse \
     --inner_crit_compare_to pde_log \
     --enc_dec_type vgg \
@@ -34,6 +41,7 @@ do
     --val_batch_size 1 \
     --train_batch_size 16 \
     --train_num_inner_steps 1 \
+    --val_num_inner_steps 1 \
     --num_jump_steps 0 \
     --n_epochs 200 \
     --inner_lr 0.0001 \
@@ -51,8 +59,8 @@ do
     --use_partials \
     --save_checkpoint \
     --ckpt_outer_loss \
-    --log_dir /data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_advection_new_params/baseline_4k/seed=$SEED/no_norm_steps=5/run_pino/ \
-    --reload_dir /data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_advection_new_params/ckpt/seed=$SEED/no_norm_steps=5/run_pino/final/best_outer_val_ckpt_model.pt \
+    --log_dir $LOGDIR/run_true_conditioning_single_scale_shift/ \
+    --reload_dir $RELOADDIR/run_true_conditioning_single_scale_shift/final/best_outer_val_ckpt_model.pt \
     --channels 1 \
     --random_weights \
     --batch_norm_to_group_norm \

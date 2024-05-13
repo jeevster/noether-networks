@@ -1,32 +1,32 @@
-DATADIR=/data/divyam123/burgers_4096_8192_-2_0.3
+DATADIR=/data/divyam123/advection_subsample
+
 for SEED in 0 1 2
 do
-    LOGDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_burgers_new_params_clean/baseline_4k_new_residual_15/seed=$SEED/no_norm_steps=5
-    RELOADDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_burgers_new_params_clean/ckpt/seed=$SEED/no_norm_steps=5
-    python train_noether_net_checkpointing_non_meta_2_final_metrics.py \
+    LOGDIR=/data/divyam123/slurm_runs_all/1d_advection_new_params/baseline/seed=$SEED/no_norm_steps=5
+    RELOADDIR=/data/divyam123/slurm_runs_all/1d_advection_new_params/ckpt/seed=$SEED/no_norm_steps=5
+
+    python train_noether_net_final_inference.py \
+    --percent_train 0.0 \
     --seed $SEED \
-    --conditioning \
-    --single_field \
-    --pinn_outer_loss \
-    --use_true_params_train \
-    --use_true_params_val \
-    --inner_opt_all_model_weights \
+    --use_init_frames_for_params \
+    --emmbedding_param_loss \
+    --tailor \
+    --use_cn \
     --use_adam_inner_opt \
+    --emb_type pde_emb \
+    --relative_data_loss \
     --outer_loss_choice mse \
     --inner_crit_compare_to pde_zero \
-    --emb_type pde_const_emb \
     --image_width 128 \
     --g_dim 128 \
     --z_dim 64 \
-    --dataset 1d_burgers_multiparam \
+    --dataset 1d_advection_multiparam \
     --data_root $DATADIR \
-    --num_trials 2 \
+    --num_trials 1 \
     --n_past 2 \
     --n_future 2 \
     --num_threads 0 \
-    --ckpt_every 10 \
     --inner_crit_mode mse \
-    --inner_crit_compare_to pde_log \
     --enc_dec_type vgg \
     --num_epochs_per_val 1 \
     --fno_modes 16 \
@@ -36,7 +36,7 @@ do
     --val_batch_size 1 \
     --train_batch_size 16 \
     --train_num_inner_steps 1 \
-    --val_num_inner_steps 1 \
+    --val_num_inner_steps 5 \
     --num_jump_steps 0 \
     --n_epochs 200 \
     --inner_lr 0.0001 \
@@ -54,8 +54,8 @@ do
     --use_partials \
     --save_checkpoint \
     --ckpt_outer_loss \
-    --log_dir $LOGDIR/run_true_conditioning \
-    --reload_dir $RELOADDIR/run_true_conditioning/final/best_outer_val_ckpt_model.pt \
+    --log_dir $LOGDIR/run_data_outer_train=learnable_val=learnable_param_loss_init_frames/ \
+    --reload_dir $RELOADDIR/run_data_outer_train=learnable_val=learnable_param_loss_init_frames/final/best_outer_val_ckpt_model.pt \
     --channels 1 \
     --random_weights \
     --batch_norm_to_group_norm \
