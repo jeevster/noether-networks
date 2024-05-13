@@ -92,7 +92,7 @@ DATADIR=/data/divyam123/react_diff_1024_2048_nu=1e-2_1e-1_rho=1_10
 
 SEED=0
 LOSS=mse
-python train_noether_net_checkpointing_non_meta_2.py \
+python train_noether_net.py \
 --seed $SEED \
 --use_init_frames_for_params \
 --emmbedding_param_loss \
@@ -139,8 +139,8 @@ python train_noether_net_checkpointing_non_meta_2.py \
 --num_learned_parameters 1 \
 --use_partials \
 --save_checkpoint \
---log_dir /data/divyam123/slurm_runs/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/param_no_norm_steps=5/run_data_outer_train=learnable_val=learnable_param_loss_init_frames/ \
---warmstart_emb_path /data/divyam123/slurm_runs/results_noether_summer/1d_diffusion_reaction_multiparam_new/pre_trained_embeddings/seed=$SEED/pretrained_embedding_param_loss/final \
+--log_dir /data/divyam123/slurm_runs_try_2/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/param_no_norm_steps=5/run_data_outer_train=learnable_val=learnable_param_loss_init_frames/ \
+--warmstart_emb_path /data/divyam123/slurm_runs_try_2/results_noether_summer/1d_diffusion_reaction_multiparam_new/pre_trained_embeddings/seed=$SEED/pretrained_embedding_param_loss/final \
 --channels 1 \
 --random_weights \
 --batch_norm_to_group_norm \

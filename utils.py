@@ -70,7 +70,7 @@ def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
         embs = [pde_crit(frame, true_params = true_params)[0] for frame in gen_seq]
     elif opt.num_emb_frames > 1:
         assert(len(gen_seq) >= opt.num_emb_frames)
-        pde_value, true_pde_value, pred_params = pde_crit(torch.stack(gen_seq, dim=1), true_params = true_params, return_params = True)
+        pde_value, true_pde_value, pred_params = pde_crit(torch.stack(gen_seq[-2:], dim=1), true_params = true_params, return_params = True)
         embs.append(pde_value)
     else:
         raise ValueError
@@ -217,7 +217,7 @@ def load_dataset(opt):
             shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -229,7 +229,7 @@ def load_dataset(opt):
             shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -247,7 +247,7 @@ def load_dataset(opt):
             shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -263,7 +263,7 @@ def load_dataset(opt):
             shuffle=True,
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -283,7 +283,7 @@ def load_dataset(opt):
             pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -299,7 +299,7 @@ def load_dataset(opt):
             pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -321,7 +321,7 @@ def load_dataset(opt):
             pde = 'diffuion_reaction',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -337,7 +337,7 @@ def load_dataset(opt):
             pde = 'diffuion_reaction',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -358,7 +358,7 @@ def load_dataset(opt):
             pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,
@@ -372,7 +372,7 @@ def load_dataset(opt):
             pde = 'advection',
             image_size=opt.image_width,
             seq_len=opt.n_eval if hasattr(opt, 'train_noether') else opt.num_emb_frames,
-            percent_train=0.8,
+            percent_train=0.8 if hasattr(opt, 'percent_train') == False else opt.percent_train,
             frame_step=frame_step,
             num_param_combinations=opt.num_param_combinations,
             fixed_ic = opt.fixed_ic,

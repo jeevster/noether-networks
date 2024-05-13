@@ -5,9 +5,9 @@ SEED=1
 LOSS=mse
 for SEED in 0 1 2
 do
-    RELOADDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/param_no_norm_steps=5
-    LOGDIR=/data/divyam123/slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/baseline_4k_new_residual/seed=$SEED/param_no_norm_steps=5
-    python train_noether_net_checkpointing_non_meta_2_final_metrics.py \
+    RELOADDIR=/data/divyam123/slurm_runs_try_2/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/param_no_norm_steps=5
+    LOGDIR=/data/divyam123/slurm_runs_try_2/results_noether_summer/1d_diffusion_reaction_multiparam_new/baseline_4k_new_residual/seed=$SEED/param_no_norm_steps=5
+    python train_noether_net_final_inference.py \
     --seed $SEED \
     --inner_opt_all_model_weights \
     --use_adam_inner_opt \

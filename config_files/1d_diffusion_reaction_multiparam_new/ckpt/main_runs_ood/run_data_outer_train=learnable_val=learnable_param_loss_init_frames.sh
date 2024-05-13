@@ -1,6 +1,6 @@
 DATADIR=/data/divyam123/react_diff_1024_2048_nu=1e-2_1e-1_rho=1_10
 
-for SEED in 0
+for SEED in 0 1 2
 do
     python train_noether_net.py \
     --ood \

@@ -227,6 +227,8 @@ parser.add_argument('--norm', default = '',
                     help ='to use select between instance_norm, layer_norm, batch_norm')
 parser.add_argument('--ood', action = 'store_true',
                     help='ood exp for advection')
+parser.add_argument('--percent_train', type = float,default=0.8,
+                    help='ood exp for advection')
 
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')

@@ -260,6 +260,8 @@ parser.add_argument('--total_size_percent', type=float,default = 1.0,
                     help='ood exp for advection')
 parser.add_argument('--percent_trajectories', type=float,default = 1.0, 
                     help='ood exp for advection')
+parser.add_argument('--percent_train', type = float,default=0.8,
+                    help='ood exp for advection')
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
 opt = parser.parse_args()

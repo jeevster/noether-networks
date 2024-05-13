@@ -2,9 +2,9 @@ DATADIR=/data/divyam123/react_diff_4096_8192_nu=1e-2_1e-1_rho=1_10
 
 for SEED in 0 1 2
 do
-    RELOADDIR=/data/divyam123/slurm_runs_new_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/no_norm_steps=5
-    LOGDIR=/data/divyam123/slurm_runs_new_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/baseline_4k_new_residual_15/seed=$SEED/no_norm_steps=5
-    python train_noether_net_checkpointing_non_meta_2_final_metrics.py \
+    RELOADDIR=/data/divyam123/re_slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/no_norm_steps=5
+    LOGDIR=/data/divyam123/re_slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/baseline_4k_new_residualbaseline_4k_new_residual_15/seed=$SEED/param_no_norm_steps=5
+    python train_noether_net_final_inference.py \
     --seed $SEED \
     --use_init_frames_for_params \
     --emmbedding_param_loss \

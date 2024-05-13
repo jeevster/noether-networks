@@ -260,6 +260,8 @@ parser.add_argument('--pde_loss_reg', type=float,default = 1.0,
                     help='regularization constant for data loss')
 parser.add_argument('--ood', action = 'store_true',
                     help='ood exp for advection')
+parser.add_argument('--percent_train', type = float,default=0.8,
+                    help='ood exp for advection')
 
 print("torch.cuda.current_device()",torch.cuda.current_device())
 device = torch.device('cuda')
@@ -325,7 +327,7 @@ writer.add_custom_scalars(custom_scalars)
 
 
 # --------- load a dataset ------------------------------------
-train_data, test_data = utils.load_dataset(opt)
+_, test_data = utils.load_dataset(opt)
 
 if opt.stack_frames:
     assert opt.n_past % 2 == 0 and opt.n_future % 2 == 0
@@ -344,12 +346,7 @@ if (opt.num_train_batch == -1) or (len(train_data) // opt.train_batch_size < opt
 if (opt.num_val_batch == -1) or (len(test_data) // opt.val_batch_size < opt.num_val_batch):
     opt.num_val_batch = len(test_data) // opt.val_batch_size
 
-train_loader = DataLoader(train_data,
-                          num_workers=opt.num_threads,
-                          batch_size=opt.train_batch_size if opt.train_batch_size else opt.batch_size,
-                          shuffle=True,
-                          drop_last=True,
-                          pin_memory=False)
+
 
 test_loader = DataLoader(test_data,
                         num_workers=opt.num_threads,
@@ -366,7 +363,6 @@ def get_batch_generator(data_loader):
             yield batch, params
 
 
-training_batch_generator = get_batch_generator(train_loader)
 testing_batch_generator = get_batch_generator(test_loader)
 
 print(opt)

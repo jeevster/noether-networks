@@ -1,30 +1,37 @@
 DATADIR=/data/divyam123/react_diff_4096_8192_nu=1e-2_1e-1_rho=1_10
 
-
 SEED=1
 LOSS=mse
 for SEED in 0 1 2
 do
-    RELOADDIR=/data/divyam123/re_slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/no_norm_steps=5
-    LOGDIR=/data/divyam123/re_slurm_runs_fixed_outer_residual/results_noether_summer/1d_diffusion_reaction_multiparam_new/baseline_4k_new_residualbaseline_4k_new_residual_15/seed=$SEED/param_no_norm_steps=5
+    RELOADDIR=/data/divyam123/slurm_runs_all/1d_diffusion_reaction_multiparam_new/ckpt/seed=$SEED/param_no_norm_steps=5/
+    LOGDIR=/data/divyam123/slurm_runs_all/1d_diffusion_reaction_multiparam_new/baseline/seed=$SEED/param_no_norm_steps=5/
     python train_noether_net_final_inference.py \
     --seed $SEED \
+    --percent_train 0.0 \
+    --conditioning \
+    --single_field \
+    --pinn_outer_loss \
+    --use_true_params_train \
+    --use_true_params_val \
     --inner_opt_all_model_weights \
     --use_adam_inner_opt \
-    --emb_type pde_const_emb \
     --relative_data_loss \
     --outer_loss_choice mse \
     --inner_crit_compare_to pde_zero \
+    --emb_type pde_const_emb \
     --image_width 128 \
     --g_dim 128 \
     --z_dim 64 \
     --dataset 1d_diffusion_reaction_multiparam \
     --data_root $DATADIR \
-    --num_trials 1 \
+    --num_trials 2 \
     --n_past 2 \
-    --n_future 15 \
+    --n_future 2 \
     --num_threads 0 \
+    --ckpt_every 10 \
     --inner_crit_mode mse \
+    --inner_crit_compare_to pde_log \
     --enc_dec_type vgg \
     --num_epochs_per_val 1 \
     --fno_modes 16 \
@@ -52,11 +59,10 @@ do
     --use_partials \
     --save_checkpoint \
     --ckpt_outer_loss \
-    --log_dir $LOGDIR/run_data \
-    --reload_dir $RELOADDIR/run_data/final/best_outer_val_ckpt_model.pt \
+    --log_dir $LOGDIR/run_true_conditioning \
+    --reload_dir $RELOADDIR/run_true_conditioning/final/best_outer_val_ckpt_model.pt \
     --channels 1 \
     --random_weights \
     --batch_norm_to_group_norm \
     --model_path ./checkpoints/pdes/t_past2/batch_5d
 done
-

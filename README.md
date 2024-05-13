@@ -103,17 +103,18 @@ code to generate Grad-CAM heatmaps.
 DG: UPDATE 05-10-2024
 
 
-STEP 1: getting checkpoints
+STEP 1: training non-pino methods:
 
 config_files -> system of choice -> ckpt -> pick bash file and run
-    a) for noether, run train_noether_net.py
-    b) for PINO, run trainnoether_net_checkpointing_pino.py
+    a) for noether,pinns, data, true_conditioning run train_noether_net.py
+    b) for PINO, run train_noether_net_checkpointing_pino_manual.py
 
 STEP 2: computing final values + plots
 
 config_files -> system of choice -> run_inference folders -> pick bash file and run
-    a) for noether, run train_noether_net_final_inference.py
+    a) for noether,pinns, data, true_conditioning run train_noether_net_final_inference.py
     b) for PINO, run train_noether_net_checkpointing_pino_final_inference.py
 
 Each final inference run will save a 'saved_dictionary.pkl' which contains the mean 
-and the batch variance of the final run
+and the batch variance of the inference run
+
