@@ -70,7 +70,7 @@ def svg_pde_crit(gen_seq, true_params, pde_crit, opt):
         embs = [pde_crit(frame, true_params = true_params)[0] for frame in gen_seq]
     elif opt.num_emb_frames > 1:
         assert(len(gen_seq) >= opt.num_emb_frames)
-        pde_value, true_pde_value, pred_params = pde_crit(torch.stack(gen_seq[-2:], dim=1), true_params = true_params, return_params = True)
+        pde_value, true_pde_value, pred_params = pde_crit(torch.stack(gen_seq, dim=1), true_params = true_params, return_params = True)
         embs.append(pde_value)
     else:
         raise ValueError
